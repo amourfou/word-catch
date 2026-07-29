@@ -341,7 +341,7 @@ export async function getDailyAccuracyTrend(
     }
   }
 
-  return [...buckets.entries()].map(([date, b]) => ({
+  return Array.from(buckets.entries()).map(([date, b]) => ({
     date,
     correct: b.correct,
     total: b.total,
