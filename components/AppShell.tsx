@@ -25,17 +25,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="mx-auto flex min-h-[100dvh] w-full max-w-lg flex-col">
-      <header className="safe-pad sticky top-0 z-20 flex items-center justify-between border-b border-border/60 bg-background/85 px-4 pb-3 backdrop-blur-md">
-        <div>
-          <p className="font-display text-lg font-semibold tracking-tight text-primary">
+    <div className="phone-shell mx-auto flex min-h-[100dvh] w-full flex-col">
+      <header className="safe-pad sticky top-0 z-20 flex items-center justify-between border-b border-border/60 bg-background/85 px-[var(--shell-pad-x)] pb-3 backdrop-blur-md">
+        <div className="min-w-0">
+          <p className="font-display text-[length:var(--title-sm)] font-semibold tracking-tight text-primary">
             WordCatch
           </p>
           {user && (
-            <p className="text-xs text-muted-foreground">{user.name}</p>
+            <p className="truncate text-xs text-muted-foreground">{user.name}</p>
           )}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <Button
             variant="ghost"
             size="icon"
@@ -52,10 +52,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="flex-1 px-4 py-4 pb-24">{children}</main>
+      <main className="flex-1 px-[var(--shell-pad-x)] py-[var(--shell-pad-y)] pb-[calc(5.5rem+var(--safe-bottom))]">
+        {children}
+      </main>
 
       <nav className="safe-pad fixed bottom-0 left-0 right-0 z-20 border-t border-border/60 bg-background/90 backdrop-blur-md">
-        <div className="mx-auto grid max-w-lg grid-cols-4 gap-1 px-2 py-2">
+        <div className="phone-shell mx-auto grid grid-cols-4 gap-1 px-2 py-2">
           {nav.map(({ href, label, icon: Icon }) => {
             const active =
               href === "/"
@@ -66,7 +68,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={href}
                 href={href}
                 className={cn(
-                  "flex flex-col items-center gap-0.5 rounded-xl px-2 py-2 text-xs font-medium touch-manipulation transition",
+                  "flex min-h-[3rem] flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-2 text-[0.7rem] font-medium touch-manipulation transition sm:text-xs",
                   active
                     ? "bg-primary/10 text-primary"
                     : "text-muted-foreground hover:bg-muted"

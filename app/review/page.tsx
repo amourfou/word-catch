@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { startOfTodaySeoulIso } from "@/lib/date";
 import { listWords } from "@/lib/db";
 import {
@@ -79,7 +78,7 @@ export default function ReviewSetupPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="font-display text-2xl font-semibold">복습 설정</h1>
+        <h1 className="font-display text-[length:var(--title-lg)] font-semibold">복습 설정</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           방식과 대상을 고른 뒤 시작하세요
         </p>
@@ -150,30 +149,36 @@ export default function ReviewSetupPage() {
       </Section>
 
       <Section title="문제 수">
-        <div className="flex flex-wrap gap-2">
-          {[5, 10, 15, 20].map((n) => (
-            <SelectBtn
-              key={n}
-              active={customCount === "" && settings.count === n}
-              onClick={() => {
-                setCustomCount("");
-                setSettings((s) => ({ ...s, count: n }));
-              }}
-            >
-              {n}
-            </SelectBtn>
-          ))}
-        </div>
-        <div className="mt-3">
-          <Label htmlFor="custom">직접 입력</Label>
+        <div className="flex items-stretch gap-2">
+          <div className="grid flex-none grid-cols-4 gap-2">
+            {[5, 10, 15, 20].map((n) => (
+              <SelectBtn
+                key={n}
+                active={customCount === "" && settings.count === n}
+                onClick={() => {
+                  setCustomCount("");
+                  setSettings((s) => ({ ...s, count: n }));
+                }}
+                className="min-w-[2.75rem] px-2"
+              >
+                {n}
+              </SelectBtn>
+            ))}
+          </div>
           <Input
             id="custom"
             type="number"
+            inputMode="numeric"
             min={1}
             max={100}
             value={customCount}
             onChange={(e) => setCustomCount(e.target.value)}
-            placeholder="예: 12"
+            placeholder="직접 입력"
+            aria-label="문제 수 직접 입력"
+            className={cn(
+              "h-auto min-w-0 flex-1 py-2.5 text-center text-sm",
+              customCount.trim() !== "" && "border-primary ring-2 ring-ring"
+            )}
           />
         </div>
       </Section>
@@ -222,7 +227,7 @@ function SelectBtn({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-xl border px-3 py-2.5 text-sm font-medium touch-manipulation transition",
+        "inline-flex min-h-[var(--touch-min)] items-center justify-center rounded-xl border px-3 py-2.5 text-sm font-medium touch-manipulation transition",
         active
           ? "border-primary bg-primary text-primary-foreground"
           : "border-border bg-card text-foreground hover:bg-muted",

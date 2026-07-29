@@ -6,6 +6,14 @@
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 
+  /* Galaxy S25 base (~360 CSS px), fluid up to tablet */
+  --shell-max: 26.25rem; /* 420px — S25 logical width + margin */
+  --shell-pad-x: clamp(0.875rem, 4.2vw, 1.25rem);
+  --shell-pad-y: clamp(0.75rem, 2.5vw, 1.25rem);
+  --title-sm: clamp(1.05rem, 4.2vw, 1.15rem);
+  --title-lg: clamp(1.35rem, 5.5vw, 1.6rem);
+  --touch-min: 2.75rem;
+
   --background: 210 40% 98%;
   --foreground: 215 28% 14%;
   --card: 0 0% 100%;
@@ -70,7 +78,25 @@
 
 @layer utilities {
   .safe-pad {
-    padding-top: max(1rem, var(--safe-top));
-    padding-bottom: max(1rem, var(--safe-bottom));
+    padding-top: max(0.75rem, var(--safe-top));
+    padding-bottom: max(0.5rem, var(--safe-bottom));
+  }
+
+  .phone-shell {
+    width: 100%;
+    max-width: min(100%, var(--shell-max));
+  }
+}
+
+/* Slightly wider content on large phones / small tablets */
+@media (min-width: 430px) {
+  :root {
+    --shell-max: 28rem;
+  }
+}
+
+@media (min-width: 768px) {
+  :root {
+    --shell-max: 30rem;
   }
 }

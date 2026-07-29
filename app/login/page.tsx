@@ -39,9 +39,9 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="safe-pad mx-auto flex min-h-[100dvh] w-full max-w-md flex-col justify-center px-4">
-      <div className="rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur-sm">
-        <p className="text-center font-display text-2xl font-semibold text-primary">
+    <div className="safe-pad phone-shell mx-auto flex min-h-[100dvh] w-full flex-col justify-center px-[var(--shell-pad-x)]">
+      <div className="rounded-3xl border border-border bg-card/80 p-5 shadow-sm backdrop-blur-sm sm:p-6">
+        <p className="text-center font-display text-[length:var(--title-lg)] font-semibold text-primary">
           WordCatch
         </p>
         <h1 className="mt-2 text-center text-xl font-bold">

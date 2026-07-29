@@ -41,7 +41,7 @@ export default function HomePage() {
   return (
     <div className="space-y-6">
       <section>
-        <h1 className="font-display text-2xl font-semibold tracking-tight">
+        <h1 className="font-display text-[length:var(--title-lg)] font-semibold tracking-tight">
           안녕하세요, {user?.name}님
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
