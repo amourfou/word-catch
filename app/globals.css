@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  --background: 210 40% 98%;
+  --foreground: 215 28% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 215 28% 14%;
+  --primary: 168 55% 32%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 200 30% 94%;
+  --secondary-foreground: 215 28% 18%;
+  --muted: 210 25% 94%;
+  --muted-foreground: 215 12% 42%;
+  --accent: 32 90% 55%;
+  --accent-foreground: 30 40% 12%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 22% 88%;
+  --input: 214 22% 88%;
+  --ring: 168 55% 32%;
+  --radius: 0.875rem;
+
+  --status-unknown: 0 72% 51%;
+  --status-learning: 42 92% 48%;
+  --status-mastered: 152 55% 38%;
+}
+
+.dark {
+  --background: 220 28% 8%;
+  --foreground: 210 30% 96%;
+  --card: 220 24% 12%;
+  --card-foreground: 210 30% 96%;
+  --primary: 168 50% 45%;
+  --primary-foreground: 220 28% 8%;
+  --secondary: 220 20% 18%;
+  --secondary-foreground: 210 30% 96%;
+  --muted: 220 18% 16%;
+  --muted-foreground: 215 14% 62%;
+  --accent: 32 85% 52%;
+  --accent-foreground: 30 40% 10%;
+  --destructive: 0 65% 48%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 16% 22%;
+  --input: 220 16% 22%;
+  --ring: 168 50% 45%;
+
+  --status-unknown: 0 70% 58%;
+  --status-learning: 42 90% 55%;
+  --status-mastered: 152 50% 48%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    min-height: 100dvh;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 10% -10%, hsl(168 45% 40% / 0.12), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 0%, hsl(32 80% 50% / 0.1), transparent);
+  }
+}
+
+@layer utilities {
+  .safe-pad {
+    padding-top: max(1rem, var(--safe-top));
+    padding-bottom: max(1rem, var(--safe-bottom));
+  }
+}
