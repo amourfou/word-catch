@@ -2,17 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, Home, LogOut, Moon, Plus, Sun, Zap } from "lucide-react";
+import { BarChart2, BookOpen, LogOut, Moon, Plus, Sun, Zap } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const nav = [
-  { href: "/", label: "홈", icon: Home },
   { href: "/words", label: "단어", icon: BookOpen },
   { href: "/words/new", label: "추가", icon: Plus },
   { href: "/review", label: "복습", icon: Zap },
+  { href: "/stats", label: "통계", icon: BarChart2 },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -27,14 +27,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="phone-shell mx-auto flex min-h-[100dvh] w-full flex-col">
       <header className="safe-pad sticky top-0 z-20 flex items-center justify-between border-b border-border/60 bg-background/85 px-[var(--shell-pad-x)] pb-3 backdrop-blur-md">
-        <div className="min-w-0">
+        <Link href="/" className="min-w-0 touch-manipulation">
           <p className="font-display text-[length:var(--title-sm)] font-semibold tracking-tight text-primary">
             WordCatch
           </p>
           {user && (
             <p className="truncate text-xs text-muted-foreground">{user.name}</p>
           )}
-        </div>
+        </Link>
         <div className="flex shrink-0 items-center gap-1">
           <Button
             variant="ghost"

@@ -286,3 +286,85 @@ export async function getRecentLogs(
   if (error) return [];
   return (data ?? []) as ReviewLogRow[];
 }
+
+export interface DayAccuracy {
+  date: string; // YYYY-MM-DD (Seoul)
+  correct: number;
+  total: number;
+  rate: number;
+}
+
+export interface WrongWordStat {
+  wordId: string;
+  word: string;
+  wrongCount: number;
+}
+
+/** Last 7 Seoul calendar days of review accuracy (oldest → newest). */
+export async function getDailyAccuracyTrend(
+  userId: string,
+  days = 7
+): Promise<DayAccuracy[]> {
+  const since = new Date();
+  since.setDate(since.getDate() - (days - 1));
+  since.setHours(0, 0, 0, 0);
+
+  const { data, error } = await supabase
+    .from("wordcatch_review_logs")
+    .select("is_correct, reviewed_at")
+    .eq("user_id", userId)
+    .gte("reviewed_at", since.toISOString())
+    .order("reviewed_at", { ascending: true });
+
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  const buckets = new Map<string, { correct: number; total: number }>();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = fmt.format(d);
+    buckets.set(key, { correct: 0, total: 0 });
+  }
+
+  if (!error && data) {
+    for (const row of data) {
+      const key = fmt.format(new Date(row.reviewed_at));
+      const b = buckets.get(key);
+      if (!b) continue;
+      b.total += 1;
+      if (row.is_correct) b.correct += 1;
+    }
+  }
+
+  return [...buckets.entries()].map(([date, b]) => ({
+    date,
+    correct: b.correct,
+    total: b.total,
+    rate: b.total ? Math.round((b.correct / b.total) * 100) : 0,
+  }));
+}
+
+/** Words with highest wrong_count for this user. */
+export async function getTopWrongWords(
+  userId: string,
+  limit = 10
+): Promise<WrongWordStat[]> {
+  const { data, error } = await supabase
+    .from("wordcatch_words")
+    .select("id, word, wrong_count")
+    .eq("user_id", userId)
+    .gt("wrong_count", 0)
+    .order("wrong_count", { ascending: false })
+    .limit(limit);
+  if (error || !data) return [];
+  return data.map((r) => ({
+    wordId: r.id as string,
+    word: r.word as string,
+    wrongCount: r.wrong_count as number,
+  }));
+}

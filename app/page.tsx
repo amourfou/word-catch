@@ -83,11 +83,20 @@ export default function HomePage() {
           <StatusBadge status="mastered" />
           <span className="text-sm tabular-nums">{counts.mastered}</span>
         </div>
-        {accuracy.total > 0 && (
-          <p className="mt-3 text-xs text-muted-foreground">
-            최근 복습 정답률 {accuracy.rate}% ({accuracy.total}회)
-          </p>
-        )}
+        <p className="mt-3 text-xs text-muted-foreground">
+          최근 복습 정답률{" "}
+          {loading
+            ? "—"
+            : accuracy.total > 0
+              ? `${accuracy.rate}% (${accuracy.total}회)`
+              : "아직 없음"}
+        </p>
+        <Link
+          href="/stats"
+          className="mt-3 inline-block text-sm font-semibold text-primary"
+        >
+          통계 자세히 보기 →
+        </Link>
       </section>
 
       <section className="grid gap-3">
