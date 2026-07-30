@@ -30,8 +30,8 @@ const DATE_LABEL: Record<DateFilter, string> = {
 
 const FILTERS_OPEN_KEY = "wordcatch-words-filters-open";
 const SUGGEST_LIMIT = 8;
-/** 영한 API 미정 — 사전 보기 UI만 숨김 (구현은 유지) */
-const SHOW_DICTIONARY = false;
+/** 영한 API 미정 — 당분간 영영 사전(참고용) 표시 */
+const SHOW_DICTIONARY = true;
 
 export default function WordsPage() {
   const { user } = useAuth();
@@ -407,8 +407,8 @@ export default function WordsPage() {
       <ul className="space-y-2">
         {words.map((w) => (
           <li key={w.id}>
-            <div className="rounded-2xl border border-border bg-card transition hover:border-primary/40">
-              <Link href={`/words/${w.id}`} className="block p-4 pb-2">
+            <div className="rounded-2xl border border-border bg-card p-4 transition hover:border-primary/40">
+              <Link href={`/words/${w.id}`} className="block">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-lg font-semibold">{w.word}</p>
@@ -421,23 +421,26 @@ export default function WordsPage() {
                   </div>
                   <StatusBadge status={w.status} />
                 </div>
-                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  {w.source && <span>{w.source}</span>}
-                  <span>{formatDateKo(w.created_at)}</span>
-                </div>
               </Link>
-              {SHOW_DICTIONARY && (
-                <div className="flex justify-end border-t border-border/60 px-2 py-1">
+              <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <Link
+                  href={`/words/${w.id}`}
+                  className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1"
+                >
+                  {w.source && <span className="truncate">{w.source}</span>}
+                  <span className="shrink-0">{formatDateKo(w.created_at)}</span>
+                </Link>
+                {SHOW_DICTIONARY && (
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-primary touch-manipulation hover:bg-primary/10"
+                    className="inline-flex shrink-0 items-center gap-1 font-medium text-primary touch-manipulation"
                     onClick={() => setDictWord(w)}
                   >
                     <BookOpen className="h-3.5 w-3.5" />
                     사전
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </li>
         ))}

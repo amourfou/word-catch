@@ -73,9 +73,6 @@ export function DictionaryPopup({
       >
         <div className="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
           <div className="min-w-0">
-            <p className="text-xs font-medium text-muted-foreground">
-              영영 사전 (참고용)
-            </p>
             <h2
               id="dict-title"
               className="font-display text-xl font-semibold truncate"
@@ -112,7 +109,7 @@ export function DictionaryPopup({
           </div>
         </div>
 
-        <div className="overflow-y-auto px-4 py-3">
+        <div className="overflow-y-auto px-4 py-3 pb-4">
           {savedMeanings && savedMeanings.length > 0 && (
             <div className="mb-3 rounded-xl bg-primary/5 px-3 py-2.5">
               <p className="text-xs font-medium text-primary">내가 적은 뜻</p>
@@ -152,17 +149,11 @@ export function DictionaryPopup({
                   </ol>
                 </section>
               ))}
-              <p className="text-[0.7rem] text-muted-foreground">
-                ※ 앱에 저장한 뜻은 바뀌지 않아요. 참고만 하세요.
+              <p className="pt-1 text-center text-[10px] text-muted-foreground">
+                From Merriam-Webster&apos;s Learner&apos;s Dictionary
               </p>
             </div>
           )}
-        </div>
-
-        <div className="border-t border-border p-3">
-          <Button type="button" className="w-full" onClick={onClose}>
-            닫기
-          </Button>
         </div>
       </div>
     </div>
