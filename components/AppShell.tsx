@@ -2,7 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart2, BookOpen, LogOut, Moon, Plus, Sun, Zap } from "lucide-react";
+import {
+  BarChart2,
+  BookOpen,
+  LogOut,
+  Moon,
+  Plus,
+  Search,
+  Sun,
+  Zap,
+} from "lucide-react";
 import { useTheme } from "next-themes";
 import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
@@ -13,6 +22,7 @@ const nav = [
   { href: "/words/new", label: "추가", icon: Plus },
   { href: "/review", label: "복습", icon: Zap },
   { href: "/stats", label: "통계", icon: BarChart2 },
+  { href: "/dict", label: "사전", icon: Search },
 ];
 
 function isNavActive(pathname: string, href: string): boolean {
@@ -33,13 +43,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const { theme, setTheme } = useTheme();
+  const isDict = pathname === "/dict" || pathname.startsWith("/dict/");
 
   if (pathname === "/login") {
     return <>{children}</>;
   }
 
   return (
-    <div className="phone-shell mx-auto flex min-h-[100dvh] w-full flex-col">
+    <div
+      className={cn(
+        "phone-shell mx-auto flex min-h-[100dvh] w-full flex-col",
+        isDict && "h-[100dvh] overflow-hidden"
+      )}
+    >
       <header className="safe-pad sticky top-0 z-20 flex items-center justify-between border-b border-border/60 bg-background/85 px-[var(--shell-pad-x)] pb-3 backdrop-blur-md">
         <Link
           href="/"
@@ -69,12 +85,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="flex-1 px-[var(--shell-pad-x)] py-[var(--shell-pad-y)] pb-[calc(5.5rem+var(--safe-bottom))]">
+      <main
+        className={cn(
+          "flex-1 pb-[calc(5.5rem+var(--safe-bottom))]",
+          isDict
+            ? "flex min-h-0 flex-col px-0 py-0"
+            : "px-[var(--shell-pad-x)] py-[var(--shell-pad-y)]"
+        )}
+      >
         {children}
       </main>
 
       <nav className="safe-pad fixed bottom-0 left-0 right-0 z-20 border-t border-border/60 bg-background/90 backdrop-blur-md">
-        <div className="phone-shell mx-auto grid grid-cols-4 gap-1 px-2 py-2">
+        <div className="phone-shell mx-auto grid grid-cols-5 gap-0.5 px-1 py-2 sm:gap-1 sm:px-2">
           {nav.map(({ href, label, icon: Icon }) => {
             const active = isNavActive(pathname, href);
             return (
@@ -82,7 +105,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={href}
                 href={href}
                 className={cn(
-                  "flex min-h-[3rem] flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-2 text-[0.7rem] font-medium touch-manipulation transition sm:text-xs",
+                  "flex min-h-[3rem] flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 py-2 text-[0.65rem] font-medium touch-manipulation transition sm:px-1 sm:text-xs",
                   active
                     ? "bg-primary/10 text-primary"
                     : "text-muted-foreground hover:bg-muted"
