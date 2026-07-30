@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -14,6 +15,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useAuth } from "@/components/AuthProvider";
+import { PersistentDictPanel } from "@/components/PersistentDictPanel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +32,6 @@ function isNavActive(pathname: string, href: string): boolean {
     return pathname === "/words/new";
   }
   if (href === "/words") {
-    // list + detail, but not the add screen
     return (
       pathname === "/words" ||
       (pathname.startsWith("/words/") && pathname !== "/words/new")
@@ -44,57 +45,84 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const isDict = pathname === "/dict" || pathname.startsWith("/dict/");
+  const [dictMounted, setDictMounted] = useState(false);
+
+  useEffect(() => {
+    if (isDict) setDictMounted(true);
+  }, [isDict]);
 
   if (pathname === "/login") {
     return <>{children}</>;
   }
 
   return (
-    <div
-      className={cn(
-        "phone-shell mx-auto flex min-h-[100dvh] w-full flex-col",
-        isDict && "h-[100dvh] overflow-hidden"
-      )}
-    >
-      <header className="safe-pad sticky top-0 z-20 flex items-center justify-between border-b border-border/60 bg-background/85 px-[var(--shell-pad-x)] pb-3 backdrop-blur-md">
-        <Link
-          href="/"
-          className="flex min-w-0 items-baseline gap-2 touch-manipulation"
-        >
-          <p className="font-display text-[length:var(--title-sm)] font-semibold tracking-tight text-primary">
-            WordCatch
-          </p>
-          {user && (
-            <p className="truncate text-sm text-muted-foreground">{user.name}</p>
-          )}
-        </Link>
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="테마 전환"
-            className="relative"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          >
-            <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-            <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-          </Button>
-          <Button variant="ghost" size="icon" aria-label="로그아웃" onClick={logout}>
-            <LogOut className="h-5 w-5" />
-          </Button>
-        </div>
-      </header>
-
-      <main
+    <>
+      {/*
+        Full-viewport scroll root — PC wheel works even on side margins.
+        Scrollbar is hidden via scrollbar-none.
+      */}
+      <div
         className={cn(
-          "flex-1 pb-[calc(5.5rem+var(--safe-bottom))]",
-          isDict
-            ? "flex min-h-0 flex-col px-0 py-0"
-            : "px-[var(--shell-pad-x)] py-[var(--shell-pad-y)]"
+          "h-[100dvh] w-full overflow-x-hidden scrollbar-none",
+          isDict ? "flex flex-col overflow-hidden" : "overflow-y-auto"
         )}
       >
-        {children}
-      </main>
+        <div
+          className={cn(
+            "phone-shell mx-auto flex w-full flex-col",
+            isDict ? "h-full min-h-0 overflow-hidden" : "min-h-full"
+          )}
+        >
+          <header className="safe-pad sticky top-0 z-20 flex shrink-0 items-center justify-between border-b border-border/60 bg-background/85 px-[var(--shell-pad-x)] pb-3 backdrop-blur-md">
+            <Link
+              href="/"
+              className="flex min-w-0 items-baseline gap-2 touch-manipulation"
+            >
+              <p className="font-display text-[length:var(--title-sm)] font-semibold tracking-tight text-primary">
+                WordCatch
+              </p>
+              {user && (
+                <p className="truncate text-sm text-muted-foreground">
+                  {user.name}
+                </p>
+              )}
+            </Link>
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="테마 전환"
+                className="relative"
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              >
+                <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+                <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="로그아웃"
+                onClick={logout}
+              >
+                <LogOut className="h-5 w-5" />
+              </Button>
+            </div>
+          </header>
+
+          <main
+            className={cn(
+              "relative flex-1",
+              isDict
+                ? "flex min-h-0 flex-col overflow-hidden px-0 py-0"
+                : // py는 pb를 덮어쓰므로 pt/pb를 분리 (하단 네비 여백 확보 → 스크롤 가능)
+                  "px-[var(--shell-pad-x)] pt-[var(--shell-pad-y)] pb-[calc(7rem+var(--safe-bottom))]"
+            )}
+          >
+            {!isDict && children}
+            {dictMounted && <PersistentDictPanel active={isDict} />}
+          </main>
+        </div>
+      </div>
 
       <nav className="safe-pad fixed bottom-0 left-0 right-0 z-20 border-t border-border/60 bg-background/90 backdrop-blur-md">
         <div className="phone-shell mx-auto grid grid-cols-5 gap-0.5 px-1 py-2 sm:gap-1 sm:px-2">
@@ -118,6 +146,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </div>
       </nav>
-    </div>
+    </>
   );
 }

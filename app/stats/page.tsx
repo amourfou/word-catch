@@ -52,14 +52,9 @@ export default function StatsPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="font-display text-[length:var(--title-lg)] font-semibold">
-          통계
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          진척도와 최근 복습 추이
-        </p>
-      </div>
+      <h1 className="font-display text-[length:var(--title-lg)] font-semibold">
+        통계
+      </h1>
 
       <section className="grid grid-cols-2 gap-3">
         <StatCard label="오늘 추가" value={loading ? "—" : String(counts.today)} />

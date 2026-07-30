@@ -1,3 +1,8 @@
+import {
+  startOfMonthSeoulIso,
+  startOfTodaySeoulIso,
+  startOfWeekSeoulIso,
+} from "@/lib/date";
 import type {
   ReviewDirection,
   ReviewMode,
@@ -8,6 +13,8 @@ import type {
 
 export type ReviewTarget =
   | "today"
+  | "week"
+  | "month"
   | "unknown"
   | "learning"
   | "mastered"
@@ -17,6 +24,8 @@ export interface ReviewSettings {
   mode: ReviewMode;
   direction: "en_to_ko" | "ko_to_en" | "mixed";
   targets: ReviewTarget[];
+  /** Empty = no source filter. When set, AND with status/date targets. */
+  sources: string[];
   count: number;
 }
 
@@ -168,16 +177,40 @@ export function buildReviewItems(
   });
 }
 
+const STATUS_DATE_TARGETS: ReviewTarget[] = [
+  "today",
+  "week",
+  "month",
+  "unknown",
+  "learning",
+  "mastered",
+];
+
 export function filterWordsByTargets(
   words: WordRow[],
   targets: ReviewTarget[],
-  todayIso: string
+  sources: string[] = []
 ): WordRow[] {
-  if (targets.includes("all")) return words;
-
   const set = new Set(targets);
+  const todayIso = startOfTodaySeoulIso();
+  const weekIso = startOfWeekSeoulIso();
+  const monthIso = startOfMonthSeoulIso();
+  const hasStatusDate = STATUS_DATE_TARGETS.some((t) => set.has(t));
+  const hasAll = set.has("all");
+
+  if (hasAll && sources.length === 0) return words;
+
   return words.filter((w) => {
+    const sourceOk =
+      sources.length === 0 ||
+      (!!w.source && sources.includes(w.source));
+    if (!sourceOk) return false;
+
+    if (hasAll || !hasStatusDate) return true;
+
     if (set.has("today") && w.created_at >= todayIso) return true;
+    if (set.has("week") && w.created_at >= weekIso) return true;
+    if (set.has("month") && w.created_at >= monthIso) return true;
     if (set.has("unknown") && w.status === "unknown") return true;
     if (set.has("learning") && w.status === "learning") return true;
     if (set.has("mastered") && w.status === "mastered") return true;
@@ -190,6 +223,7 @@ export function defaultReviewSettings(): ReviewSettings {
     mode: "test",
     direction: "mixed",
     targets: ["today", "unknown", "learning"],
+    sources: [],
     count: 10,
   };
 }

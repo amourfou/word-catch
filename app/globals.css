@@ -69,6 +69,7 @@
 
   html {
     /* Keep scroll, hide scrollbar (mobile-first) */
+    overflow-x: hidden;
     scrollbar-width: none; /* Firefox */
     -ms-overflow-style: none; /* legacy Edge */
   }
@@ -82,6 +83,9 @@
   body {
     @apply bg-background text-foreground antialiased;
     min-height: 100dvh;
+    overflow-x: hidden;
+    /* Never lock body scroll — AppShell owns the scroll root */
+    overflow-y: visible;
     background-image:
       radial-gradient(ellipse 80% 50% at 10% -10%, hsl(168 45% 40% / 0.12), transparent),
       radial-gradient(ellipse 60% 40% at 100% 0%, hsl(32 80% 50% / 0.1), transparent);
@@ -105,6 +109,18 @@
   .phone-shell {
     width: 100%;
     max-width: min(100%, var(--shell-max));
+  }
+
+  /* Scroll works; scrollbar chrome stays hidden */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
   }
 }
 

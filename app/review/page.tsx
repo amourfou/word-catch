@@ -1,12 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { startOfTodaySeoulIso } from "@/lib/date";
-import { listWords } from "@/lib/db";
+import { listSources, listWords } from "@/lib/db";
 import {
   buildReviewItems,
   defaultReviewSettings,
@@ -15,6 +14,7 @@ import {
   type ReviewSettings,
   type ReviewTarget,
 } from "@/lib/reviewEngine";
+import type { SourceRow } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 export default function ReviewSetupPage() {
@@ -24,14 +24,44 @@ export default function ReviewSetupPage() {
   const [customCount, setCustomCount] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [sources, setSources] = useState<SourceRow[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    void listSources(user.id).then((list) => {
+      setSources(list);
+      if (list.length === 1) {
+        setSettings((s) =>
+          s.sources.length === 0 ? { ...s, sources: [list[0].name] } : s
+        );
+      }
+    });
+  }, [user]);
 
   const toggleTarget = (t: ReviewTarget) => {
     setSettings((s) => {
-      if (t === "all") return { ...s, targets: ["all"] };
+      if (t === "all") return { ...s, targets: ["all"], sources: [] };
       const withoutAll = s.targets.filter((x) => x !== "all");
       const has = withoutAll.includes(t);
       const next = has ? withoutAll.filter((x) => x !== t) : [...withoutAll, t];
-      return { ...s, targets: next.length ? next : ["unknown"] };
+      if (next.length === 0 && s.sources.length === 0) {
+        return { ...s, targets: ["unknown"] };
+      }
+      return { ...s, targets: next };
+    });
+  };
+
+  const toggleSource = (name: string) => {
+    setSettings((s) => {
+      const withoutAll = s.targets.filter((x) => x !== "all");
+      const has = s.sources.includes(name);
+      const nextSources = has
+        ? s.sources.filter((x) => x !== name)
+        : [...s.sources, name];
+      if (withoutAll.length === 0 && nextSources.length === 0) {
+        return { ...s, targets: ["unknown"], sources: [] };
+      }
+      return { ...s, targets: withoutAll, sources: nextSources };
     });
   };
 
@@ -49,7 +79,7 @@ export default function ReviewSetupPage() {
       const filtered = filterWordsByTargets(
         all,
         settings.targets,
-        startOfTodaySeoulIso()
+        settings.sources
       );
       if (filtered.length === 0) {
         setError("선택한 조건에 맞는 단어가 없어요.");
@@ -77,59 +107,69 @@ export default function ReviewSetupPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="font-display text-[length:var(--title-lg)] font-semibold">복습 설정</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          방식과 대상을 고른 뒤 시작하세요
-        </p>
+      <h1 className="font-display text-[length:var(--title-lg)] font-semibold">
+        복습 설정
+      </h1>
+
+      <div className="grid grid-cols-2 gap-2">
+        {(
+          [
+            ["test", "테스트"],
+            ["flashcard", "플래시카드"],
+          ] as const
+        ).map(([v, label]) => (
+          <SelectBtn
+            key={v}
+            active={settings.mode === v}
+            onClick={() => setSettings((s) => ({ ...s, mode: v }))}
+          >
+            {label}
+          </SelectBtn>
+        ))}
       </div>
 
-      <Section title="복습 방식">
-        <div className="grid grid-cols-2 gap-2">
+      {settings.mode === "test" && (
+        <div className="grid grid-cols-3 gap-2">
           {(
             [
-              ["test", "테스트"],
-              ["flashcard", "플래시카드"],
+              ["mixed", "섞어서"],
+              ["en_to_ko", "영→한"],
+              ["ko_to_en", "한→영"],
             ] as const
           ).map(([v, label]) => (
             <SelectBtn
               key={v}
-              active={settings.mode === v}
-              onClick={() => setSettings((s) => ({ ...s, mode: v }))}
+              active={settings.direction === v}
+              onClick={() => setSettings((s) => ({ ...s, direction: v }))}
             >
               {label}
             </SelectBtn>
           ))}
         </div>
-      </Section>
-
-      {settings.mode === "test" && (
-        <Section title="방향">
-          <div className="grid grid-cols-3 gap-2">
-            {(
-              [
-                ["mixed", "섞어서"],
-                ["en_to_ko", "영→한"],
-                ["ko_to_en", "한→영"],
-              ] as const
-            ).map(([v, label]) => (
-              <SelectBtn
-                key={v}
-                active={settings.direction === v}
-                onClick={() => setSettings((s) => ({ ...s, direction: v }))}
-              >
-                {label}
-              </SelectBtn>
-            ))}
-          </div>
-        </Section>
       )}
 
-      <Section title="대상">
+      <div className="space-y-2">
         <div className="flex flex-wrap gap-2">
           {(
             [
               ["today", "오늘 추가"],
+              ["week", "이번 주 추가"],
+              ["month", "이번 달 추가"],
+            ] as const
+          ).map(([v, label]) => (
+            <SelectBtn
+              key={v}
+              active={settings.targets.includes(v)}
+              onClick={() => toggleTarget(v)}
+              className="rounded-full px-3"
+            >
+              {label}
+            </SelectBtn>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
               ["unknown", "모름"],
               ["learning", "아는 중"],
               ["mastered", "외움"],
@@ -146,25 +186,39 @@ export default function ReviewSetupPage() {
             </SelectBtn>
           ))}
         </div>
-      </Section>
-
-      <Section title="문제 수">
-        <div className="flex items-stretch gap-2">
-          <div className="grid flex-none grid-cols-4 gap-2">
-            {[5, 10, 15, 20].map((n) => (
+        {sources.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {sources.map((s) => (
               <SelectBtn
-                key={n}
-                active={customCount === "" && settings.count === n}
-                onClick={() => {
-                  setCustomCount("");
-                  setSettings((s) => ({ ...s, count: n }));
-                }}
-                className="min-w-[2.75rem] px-2"
+                key={s.id}
+                active={settings.sources.includes(s.name)}
+                onClick={() => toggleSource(s.name)}
+                className="rounded-full px-3"
               >
-                {n}
+                {s.name}
               </SelectBtn>
             ))}
           </div>
+        )}
+      </div>
+
+      <div className="flex items-stretch gap-2">
+        <div className="grid flex-none grid-cols-4 gap-2">
+          {[5, 10, 15, 20].map((n) => (
+            <SelectBtn
+              key={n}
+              active={customCount === "" && settings.count === n}
+              onClick={() => {
+                setCustomCount("");
+                setSettings((s) => ({ ...s, count: n }));
+              }}
+              className="min-w-[2.75rem] px-2"
+            >
+              {n}
+            </SelectBtn>
+          ))}
+        </div>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <Input
             id="custom"
             type="number"
@@ -173,15 +227,16 @@ export default function ReviewSetupPage() {
             max={100}
             value={customCount}
             onChange={(e) => setCustomCount(e.target.value)}
-            placeholder="직접 입력"
+            placeholder="직접"
             aria-label="문제 수 직접 입력"
             className={cn(
               "h-auto min-w-0 flex-1 py-2.5 text-center text-sm",
               customCount.trim() !== "" && "border-primary ring-2 ring-ring"
             )}
           />
+          <span className="shrink-0 text-sm text-muted-foreground">문제</span>
         </div>
-      </Section>
+      </div>
 
       {error && (
         <p className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -193,21 +248,6 @@ export default function ReviewSetupPage() {
         {busy ? "준비 중…" : `${count}문제 시작`}
       </Button>
     </div>
-  );
-}
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <h2 className="mb-2 text-sm font-semibold">{title}</h2>
-      {children}
-    </section>
   );
 }
 
