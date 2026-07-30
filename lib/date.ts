@@ -1,4 +1,4 @@
-/** Asia/Seoul helpers for "today" / "this week" filters. */
+/** Date boundaries in Korea Standard Time (KST, UTC+9). No DST. */
 
 const SEOUL = "Asia/Seoul";
 
@@ -9,10 +9,6 @@ function seoulParts(date = new Date()) {
     month: "2-digit",
     day: "2-digit",
     weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
   });
   const parts = Object.fromEntries(
     fmt.formatToParts(date).map((p) => [p.type, p.value])
@@ -25,15 +21,38 @@ function seoulParts(date = new Date()) {
   };
 }
 
-/** Start of Seoul calendar day as UTC ISO string. */
-export function startOfTodaySeoulIso(): string {
-  const { year, month, day } = seoulParts();
-  // Seoul is UTC+9 with no DST
-  const utcMs = Date.UTC(Number(year), Number(month) - 1, Number(day), 0, 0, 0) - 9 * 60 * 60 * 1000;
-  return new Date(utcMs).toISOString();
+/** YYYY-MM-DD in KST */
+export function seoulDateKey(date = new Date()): string {
+  const { year, month, day } = seoulParts(date);
+  return `${year}-${month}-${day}`;
 }
 
-/** Start of this week (Monday 00:00 Seoul) as UTC ISO string. */
+/** Parse KST wall-clock into a UTC Instant (ISO string for timestamptz compare). */
+function kstWallToUtcIso(
+  year: string | number,
+  month: string | number,
+  day: string | number,
+  hour = 0,
+  minute = 0,
+  second = 0
+): string {
+  const y = String(year).padStart(4, "0");
+  const m = String(month).padStart(2, "0");
+  const d = String(day).padStart(2, "0");
+  const hh = String(hour).padStart(2, "0");
+  const mm = String(minute).padStart(2, "0");
+  const ss = String(second).padStart(2, "0");
+  // Explicit +09:00 — not browser local, not bare UTC midnight
+  return new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}+09:00`).toISOString();
+}
+
+/** Start of today in KST (00:00:00+09:00), as UTC ISO for DB compare. */
+export function startOfTodaySeoulIso(): string {
+  const { year, month, day } = seoulParts();
+  return kstWallToUtcIso(year, month, day, 0, 0, 0);
+}
+
+/** Start of this week (Monday 00:00 KST). */
 export function startOfWeekSeoulIso(): string {
   const { year, month, day, weekday } = seoulParts();
   const weekdayIndex: Record<string, number> = {
@@ -46,11 +65,17 @@ export function startOfWeekSeoulIso(): string {
     Sun: 6,
   };
   const offset = weekdayIndex[weekday] ?? 0;
-  const utcMs =
-    Date.UTC(Number(year), Number(month) - 1, Number(day), 0, 0, 0) -
-    9 * 60 * 60 * 1000 -
-    offset * 24 * 60 * 60 * 1000;
-  return new Date(utcMs).toISOString();
+  // Shift from KST noon to avoid day-boundary ambiguity
+  const noonMs = new Date(kstWallToUtcIso(year, month, day, 12, 0, 0)).getTime();
+  const mondayNoon = new Date(noonMs - offset * 24 * 60 * 60 * 1000);
+  const p = seoulParts(mondayNoon);
+  return kstWallToUtcIso(p.year, p.month, p.day, 0, 0, 0);
+}
+
+/** Start of this month (1st 00:00 KST). */
+export function startOfMonthSeoulIso(): string {
+  const { year, month } = seoulParts();
+  return kstWallToUtcIso(year, month, 1, 0, 0, 0);
 }
 
 export function formatDateKo(iso: string): string {

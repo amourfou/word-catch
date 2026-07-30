@@ -27,12 +27,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="phone-shell mx-auto flex min-h-[100dvh] w-full flex-col">
       <header className="safe-pad sticky top-0 z-20 flex items-center justify-between border-b border-border/60 bg-background/85 px-[var(--shell-pad-x)] pb-3 backdrop-blur-md">
-        <Link href="/" className="min-w-0 touch-manipulation">
+        <Link
+          href="/"
+          className="flex min-w-0 items-baseline gap-2 touch-manipulation"
+        >
           <p className="font-display text-[length:var(--title-sm)] font-semibold tracking-tight text-primary">
             WordCatch
           </p>
           {user && (
-            <p className="truncate text-xs text-muted-foreground">{user.name}</p>
+            <p className="truncate text-sm text-muted-foreground">{user.name}</p>
           )}
         </Link>
         <div className="flex shrink-0 items-center gap-1">

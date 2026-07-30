@@ -1,9 +1,14 @@
-import { startOfTodaySeoulIso, startOfWeekSeoulIso } from "@/lib/date";
+import {
+  seoulDateKey,
+  startOfMonthSeoulIso,
+  startOfTodaySeoulIso,
+  startOfWeekSeoulIso,
+} from "@/lib/date";
 import { applyMasteryResult } from "@/lib/mastery";
 import { supabase, type ReviewLogRow, type SourceRow, type WordRow, type WordStatus } from "@/lib/supabase";
 import type { ReviewDirection, ReviewMode, TestType } from "@/lib/supabase";
 
-export type DateFilter = "today" | "week" | "all";
+export type DateFilter = "today" | "week" | "month" | "all";
 
 export interface WordFilters {
   status?: WordStatus | "all";
@@ -48,6 +53,8 @@ export async function listWords(
     query = query.gte("created_at", startOfTodaySeoulIso());
   } else if (filters.date === "week") {
     query = query.gte("created_at", startOfWeekSeoulIso());
+  } else if (filters.date === "month") {
+    query = query.gte("created_at", startOfMonthSeoulIso());
   }
 
   const { data, error } = await query;
@@ -300,40 +307,32 @@ export interface WrongWordStat {
   wrongCount: number;
 }
 
-/** Last 7 Seoul calendar days of review accuracy (oldest → newest). */
+/** Last 7 KST calendar days of review accuracy (oldest → newest). */
 export async function getDailyAccuracyTrend(
   userId: string,
   days = 7
 ): Promise<DayAccuracy[]> {
-  const since = new Date();
-  since.setDate(since.getDate() - (days - 1));
-  since.setHours(0, 0, 0, 0);
+  // Start of (today - (days-1)) in KST
+  const startToday = new Date(startOfTodaySeoulIso()).getTime();
+  const sinceMs = startToday - (days - 1) * 24 * 60 * 60 * 1000;
+  const sinceIso = new Date(sinceMs).toISOString();
 
   const { data, error } = await supabase
     .from("wordcatch_review_logs")
     .select("is_correct, reviewed_at")
     .eq("user_id", userId)
-    .gte("reviewed_at", since.toISOString())
+    .gte("reviewed_at", sinceIso)
     .order("reviewed_at", { ascending: true });
-
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
 
   const buckets = new Map<string, { correct: number; total: number }>();
   for (let i = days - 1; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = fmt.format(d);
+    const key = seoulDateKey(new Date(startToday - i * 24 * 60 * 60 * 1000));
     buckets.set(key, { correct: 0, total: 0 });
   }
 
   if (!error && data) {
     for (const row of data) {
-      const key = fmt.format(new Date(row.reviewed_at));
+      const key = seoulDateKey(new Date(row.reviewed_at));
       const b = buckets.get(key);
       if (!b) continue;
       b.total += 1;
