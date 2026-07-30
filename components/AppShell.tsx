@@ -15,6 +15,20 @@ const nav = [
   { href: "/stats", label: "통계", icon: BarChart2 },
 ];
 
+function isNavActive(pathname: string, href: string): boolean {
+  if (href === "/words/new") {
+    return pathname === "/words/new";
+  }
+  if (href === "/words") {
+    // list + detail, but not the add screen
+    return (
+      pathname === "/words" ||
+      (pathname.startsWith("/words/") && pathname !== "/words/new")
+    );
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
@@ -62,10 +76,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <nav className="safe-pad fixed bottom-0 left-0 right-0 z-20 border-t border-border/60 bg-background/90 backdrop-blur-md">
         <div className="phone-shell mx-auto grid grid-cols-4 gap-1 px-2 py-2">
           {nav.map(({ href, label, icon: Icon }) => {
-            const active =
-              href === "/"
-                ? pathname === "/"
-                : pathname === href || pathname.startsWith(`${href}/`);
+            const active = isNavActive(pathname, href);
             return (
               <Link
                 key={href}

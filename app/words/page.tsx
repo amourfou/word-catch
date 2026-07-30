@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Info, SlidersHorizontal, X } from "lucide-react";
+import { BookOpen, ChevronDown, Info, SlidersHorizontal, X } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
+import { DictionaryPopup } from "@/components/DictionaryPopup";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,8 @@ const DATE_LABEL: Record<DateFilter, string> = {
 
 const FILTERS_OPEN_KEY = "wordcatch-words-filters-open";
 const SUGGEST_LIMIT = 8;
+/** 영한 API 미정 — 사전 보기 UI만 숨김 (구현은 유지) */
+const SHOW_DICTIONARY = false;
 
 export default function WordsPage() {
   const { user } = useAuth();
@@ -49,6 +52,7 @@ export default function WordsPage() {
   const [loading, setLoading] = useState(true);
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [dictWord, setDictWord] = useState<WordRow | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -403,25 +407,38 @@ export default function WordsPage() {
       <ul className="space-y-2">
         {words.map((w) => (
           <li key={w.id}>
-            <Link
-              href={`/words/${w.id}`}
-              className="block rounded-2xl border border-border bg-card p-4 transition hover:border-primary/40"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-lg font-semibold">{w.word}</p>
-                  <p className="mt-0.5 text-sm text-muted-foreground">
-                    {w.meanings[0]}
-                    {w.meanings.length > 1 ? ` 외 ${w.meanings.length - 1}` : ""}
-                  </p>
+            <div className="rounded-2xl border border-border bg-card transition hover:border-primary/40">
+              <Link href={`/words/${w.id}`} className="block p-4 pb-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-lg font-semibold">{w.word}</p>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      {w.meanings[0]}
+                      {w.meanings.length > 1
+                        ? ` 외 ${w.meanings.length - 1}`
+                        : ""}
+                    </p>
+                  </div>
+                  <StatusBadge status={w.status} />
                 </div>
-                <StatusBadge status={w.status} />
-              </div>
-              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                {w.source && <span>{w.source}</span>}
-                <span>{formatDateKo(w.created_at)}</span>
-              </div>
-            </Link>
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                  {w.source && <span>{w.source}</span>}
+                  <span>{formatDateKo(w.created_at)}</span>
+                </div>
+              </Link>
+              {SHOW_DICTIONARY && (
+                <div className="flex justify-end border-t border-border/60 px-2 py-1">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-primary touch-manipulation hover:bg-primary/10"
+                    onClick={() => setDictWord(w)}
+                  >
+                    <BookOpen className="h-3.5 w-3.5" />
+                    사전
+                  </button>
+                </div>
+              )}
+            </div>
           </li>
         ))}
         {!loading && filtersReady && words.length === 0 && (
@@ -432,6 +449,14 @@ export default function WordsPage() {
           </li>
         )}
       </ul>
+
+      {SHOW_DICTIONARY && dictWord && (
+        <DictionaryPopup
+          word={dictWord.word}
+          savedMeanings={dictWord.meanings}
+          onClose={() => setDictWord(null)}
+        />
+      )}
     </div>
   );
 }
