@@ -130,13 +130,11 @@ export function parseLearnersResponse(
     const example = extractFirstExample(entry);
     const defs = (entry.shortdef ?? [])
       .slice(0, 3)
-      .map((d, i) => {
+      .map((d, i): DictionaryDefinition | null => {
         const definition = cleanMwText(d);
         if (!definition) return null;
-        return {
-          definition,
-          example: i === 0 ? example : undefined,
-        } satisfies DictionaryDefinition;
+        if (i === 0 && example) return { definition, example };
+        return { definition };
       })
       .filter((d): d is DictionaryDefinition => d !== null);
 
@@ -145,10 +143,12 @@ export function parseLearnersResponse(
     byPos.set(pos, [...existing, ...defs].slice(0, 3));
   }
 
-  const meanings = [...byPos.entries()].map(([partOfSpeech, definitions]) => ({
-    partOfSpeech,
-    definitions,
-  }));
+  const meanings = Array.from(byPos.entries()).map(
+    ([partOfSpeech, definitions]) => ({
+      partOfSpeech,
+      definitions,
+    })
+  );
 
   if (meanings.length === 0) return null;
 
