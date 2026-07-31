@@ -21,6 +21,7 @@ export function DictionaryPopup({
 }: DictionaryPopupProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [inexactNote, setInexactNote] = useState("");
   const [entry, setEntry] = useState<DictionaryEntry | null>(null);
 
   useEffect(() => {
@@ -28,17 +29,27 @@ export function DictionaryPopup({
     void (async () => {
       setLoading(true);
       setError("");
+      setInexactNote("");
       setEntry(null);
       const result = await fetchDictionaryEntry(word);
       if (cancelled) return;
       if (!result.ok) {
         setError(result.message);
       } else if (!result.exact) {
-        setError(
+        setInexactNote(
           result.suggested
             ? `표제어로 일치하는 항목이 없어요. (유사: ${result.suggested})`
             : "표제어로 일치하는 항목이 없어요."
         );
+        setEntry(result.entry ?? null);
+        if (!result.entry) {
+          setError(
+            result.suggested
+              ? `표제어로 일치하는 항목이 없어요. (유사: ${result.suggested})`
+              : "표제어로 일치하는 항목이 없어요."
+          );
+          setInexactNote("");
+        }
       } else {
         setEntry(result.entry);
       }
@@ -134,8 +145,19 @@ export function DictionaryPopup({
               <p className="mt-2 text-sm text-muted-foreground">{error}</p>
             </div>
           )}
+          {!loading && inexactNote && (
+            <p className="mb-3 rounded-xl bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+              {inexactNote}
+            </p>
+          )}
           {!loading && entry && (
             <div className="space-y-4">
+              {inexactNote && entry.word && (
+                <p className="text-sm font-medium">
+                  참고:{" "}
+                  <span className="font-display text-base">{entry.word}</span>
+                </p>
+              )}
               {entry.meanings.map((m) => (
                 <section key={m.partOfSpeech}>
                   <p className="text-xs font-semibold uppercase tracking-wide text-primary">

@@ -71,13 +71,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ entry, exact: true, fromCache: false });
     }
 
-    // Related/stem hit (e.g. intensively → intensive): verified, but no cache/audio.
+    // Related/stem hit (e.g. intensively → intensive): no cache, but return content for UI.
     const suggested = peekLearnersHeadword(data);
     if (suggested) {
+      const related =
+        parseLearnersResponse(data, suggested.toLowerCase()) ??
+        parseLearnersResponse(data);
       return NextResponse.json({
         exact: false,
         suggested,
-        entry: null,
+        entry: related,
       });
     }
 

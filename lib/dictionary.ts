@@ -163,7 +163,12 @@ export function parseLearnersResponse(
 
 export type DictionaryLookupResult =
   | { ok: true; exact: true; entry: DictionaryEntry }
-  | { ok: true; exact: false; suggested?: string }
+  | {
+      ok: true;
+      exact: false;
+      suggested?: string;
+      entry?: DictionaryEntry | null;
+    }
   | { ok: false; message: string };
 
 export async function fetchDictionaryEntry(
@@ -189,7 +194,12 @@ export async function fetchDictionaryEntry(
       };
     }
     if (data.exact === false) {
-      return { ok: true, exact: false, suggested: data.suggested };
+      return {
+        ok: true,
+        exact: false,
+        suggested: data.suggested,
+        entry: data.entry ?? null,
+      };
     }
     if (!data.entry) {
       return {
