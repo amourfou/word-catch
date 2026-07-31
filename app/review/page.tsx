@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ChevronDown, X } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +31,17 @@ export default function ReviewSetupPage() {
   const [error, setError] = useState("");
   const [sources, setSources] = useState<SourceRow[]>([]);
   const [prefsReady, setPrefsReady] = useState(false);
+  const [sourcesPopupOpen, setSourcesPopupOpen] = useState(false);
+  const [sourcesNeedExpand, setSourcesNeedExpand] = useState(false);
+  const sourcesWrapRef = useRef<HTMLDivElement>(null);
+
+  /** Selected sources first, then the rest (original order). */
+  const orderedSources = useMemo(() => {
+    const selected = new Set(settings.sources);
+    const picked = sources.filter((s) => selected.has(s.name));
+    const rest = sources.filter((s) => !selected.has(s.name));
+    return [...picked, ...rest];
+  }, [sources, settings.sources]);
 
   useEffect(() => {
     if (!user) return;
@@ -57,6 +69,15 @@ export default function ReviewSetupPage() {
       setPrefsReady(true);
     });
   }, [user]);
+
+  useLayoutEffect(() => {
+    const el = sourcesWrapRef.current;
+    if (!el || orderedSources.length === 0) {
+      setSourcesNeedExpand(false);
+      return;
+    }
+    setSourcesNeedExpand(el.scrollHeight > el.clientHeight + 1);
+  }, [orderedSources, prefsReady, settings.sources]);
 
   const count =
     customCount.trim() !== ""
@@ -151,9 +172,21 @@ export default function ReviewSetupPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="font-display text-[length:var(--title-lg)] font-semibold">
-        복습 설정
-      </h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="font-display text-[length:var(--title-lg)] font-semibold">
+          복습 설정
+        </h1>
+        <Button
+          type="button"
+          variant="accent"
+          size="sm"
+          className="shrink-0 px-4"
+          disabled={busy}
+          onClick={start}
+        >
+          {busy ? "준비 중…" : `${count}문제 시작`}
+        </Button>
+      </div>
 
       <div className="grid grid-cols-2 gap-2">
         {(
@@ -236,7 +269,6 @@ export default function ReviewSetupPage() {
               ["unknown", "모름"],
               ["learning", "아는 중"],
               ["mastered", "외움"],
-              ["all", "전체"],
             ] as const
           ).map(([v, label]) => (
             <SelectBtn
@@ -250,20 +282,53 @@ export default function ReviewSetupPage() {
           ))}
         </div>
         {sources.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {sources.map((s) => (
-              <SelectBtn
-                key={s.id}
-                active={settings.sources.includes(s.name)}
-                onClick={() => toggleSource(s.name)}
-                className="rounded-full px-3"
+          <div className="space-y-1.5">
+            <div
+              ref={sourcesWrapRef}
+              className="flex max-h-[6.25rem] flex-wrap gap-2 overflow-hidden"
+            >
+              {orderedSources.map((s) => (
+                <SelectBtn
+                  key={s.id}
+                  active={settings.sources.includes(s.name)}
+                  onClick={() => toggleSource(s.name)}
+                  className="rounded-full px-3"
+                >
+                  {s.name}
+                </SelectBtn>
+              ))}
+            </div>
+            {sourcesNeedExpand && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-0.5 text-xs font-medium text-muted-foreground touch-manipulation hover:text-foreground"
+                onClick={() => setSourcesPopupOpen(true)}
               >
-                {s.name}
-              </SelectBtn>
-            ))}
+                더보기
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         )}
+        <div className="flex flex-wrap gap-2">
+          <SelectBtn
+            active={settings.targets.includes("all")}
+            onClick={() => toggleTarget("all")}
+            className="rounded-full px-3"
+          >
+            전체 단어
+          </SelectBtn>
+        </div>
       </div>
+
+      {sourcesPopupOpen && (
+        <SourcesPickerPopup
+          sources={orderedSources}
+          selected={settings.sources}
+          onToggle={toggleSource}
+          onClose={() => setSourcesPopupOpen(false)}
+        />
+      )}
 
       <div className="flex items-stretch gap-2">
         <div className="grid flex-none grid-cols-4 gap-2">
@@ -313,10 +378,78 @@ export default function ReviewSetupPage() {
           {error}
         </p>
       )}
+    </div>
+  );
+}
 
-      <Button size="lg" className="w-full" disabled={busy} onClick={start}>
-        {busy ? "준비 중…" : `${count}문제 시작`}
-      </Button>
+function SourcesPickerPopup({
+  sources,
+  selected,
+  onToggle,
+  onClose,
+}: {
+  sources: SourceRow[];
+  selected: string[];
+  onToggle: (name: string) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="sources-picker-title"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[80dvh] w-full max-w-sm flex-col rounded-2xl border border-border bg-card shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <h2
+            id="sources-picker-title"
+            className="font-display text-lg font-semibold"
+          >
+            출처 선택
+          </h2>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="닫기"
+            onClick={onClose}
+          >
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+        <div className="overflow-y-auto px-4 py-3">
+          <div className="flex flex-wrap gap-2">
+            {sources.map((s) => (
+              <SelectBtn
+                key={s.id}
+                active={selected.includes(s.name)}
+                onClick={() => onToggle(s.name)}
+                className="rounded-full px-3"
+              >
+                {s.name}
+              </SelectBtn>
+            ))}
+          </div>
+        </div>
+        <div className="border-t border-border px-4 py-3">
+          <Button type="button" className="w-full" onClick={onClose}>
+            확인
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

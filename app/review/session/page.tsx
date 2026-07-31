@@ -282,40 +282,55 @@ export default function ReviewSessionPage() {
       </div>
 
       {item.testType === "multiple_choice" && item.choices ? (
-        <div className="grid gap-2">
-          {item.choices.map((c) => (
+        <div className="space-y-3">
+          <div className="grid gap-2">
+            {item.choices.map((c) => (
+              <Button
+                key={c}
+                size="lg"
+                variant="outline"
+                disabled={busy}
+                className={cn(
+                  "w-full justify-start text-left",
+                  feedback &&
+                    (c === item.correctAnswer
+                      ? "border-mastered bg-mastered/10"
+                      : answer === c
+                        ? "border-destructive bg-destructive/10"
+                        : "")
+                )}
+                onClick={() => {
+                  setAnswer(c);
+                  void finishAnswer(
+                    gradeAnswer(item.direction, item.word, c) ||
+                      c === item.correctAnswer,
+                    c
+                  );
+                }}
+              >
+                {c}
+              </Button>
+            ))}
+          </div>
+          <div className="flex justify-end">
             <Button
-              key={c}
-              size="lg"
-              variant="outline"
+              type="button"
               disabled={busy}
-              className={cn(
-                "w-full justify-start text-left",
-                feedback &&
-                  (c === item.correctAnswer
-                    ? "border-mastered bg-mastered/10"
-                    : answer === c
-                      ? "border-destructive bg-destructive/10"
-                      : "")
-              )}
-              onClick={() => {
-                setAnswer(c);
-                void finishAnswer(
-                  gradeAnswer(item.direction, item.word, c) ||
-                    c === item.correctAnswer,
-                  c
-                );
-              }}
+              onClick={() => void finishAnswer(false, "")}
             >
-              {c}
+              다음
             </Button>
-          ))}
+          </div>
         </div>
       ) : (
         <form
           className="space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
+            if (!answer.trim()) {
+              void finishAnswer(false, "");
+              return;
+            }
             const ok = gradeAnswer(item.direction, item.word, answer);
             void finishAnswer(ok, answer);
           }}
@@ -329,9 +344,11 @@ export default function ReviewSessionPage() {
             autoCapitalize="off"
             autoCorrect="off"
           />
-          <Button type="submit" size="lg" className="w-full" disabled={busy || !answer.trim()}>
-            제출
-          </Button>
+          <div className="flex justify-end">
+            <Button type="submit" disabled={busy}>
+              다음
+            </Button>
+          </div>
         </form>
       )}
 

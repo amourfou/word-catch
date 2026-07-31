@@ -48,7 +48,6 @@ export default function StatsPage() {
 
   const masteredRate =
     counts.total > 0 ? Math.round((counts.mastered / counts.total) * 100) : 0;
-  const maxDayTotal = Math.max(1, ...trend.map((d) => d.total));
 
   return (
     <div className="space-y-5">
@@ -88,31 +87,15 @@ export default function StatsPage() {
 
       <section className="rounded-2xl border border-border bg-card p-4">
         <p className="text-sm font-medium">최근 7일 정답률</p>
-        <div className="mt-4 flex h-28 items-end gap-1.5">
-          {trend.map((d) => {
-            const height =
-              d.total === 0 ? 8 : Math.max(12, Math.round((d.rate / 100) * 100));
-            const day = d.date.slice(5).replace("-", "/");
-            return (
-              <div key={d.date} className="flex flex-1 flex-col items-center gap-1">
-                <span className="text-[0.65rem] tabular-nums text-muted-foreground">
-                  {d.total ? `${d.rate}` : "–"}
-                </span>
-                <div
-                  className={cn(
-                    "w-full max-w-[2rem] rounded-t-md transition-all",
-                    d.total ? "bg-primary/80" : "bg-muted"
-                  )}
-                  style={{ height: `${height}%`, opacity: d.total ? 0.4 + (d.total / maxDayTotal) * 0.6 : 1 }}
-                  title={`${d.date}: ${d.correct}/${d.total}`}
-                />
-                <span className="text-[0.65rem] text-muted-foreground">{day}</span>
-              </div>
-            );
-          })}
+        <div className="mt-3">
+          {trend.length > 0 ? (
+            <AccuracyLineChart trend={trend} />
+          ) : (
+            <div className="h-28" />
+          )}
         </div>
         {!loading && trend.every((d) => d.total === 0) && (
-          <p className="mt-3 text-center text-xs text-muted-foreground">
+          <p className="mt-2 text-center text-xs text-muted-foreground">
             복습을 하면 여기에 추이가 쌓여요
           </p>
         )}
@@ -150,6 +133,122 @@ export default function StatsPage() {
           </ul>
         )}
       </section>
+    </div>
+  );
+}
+
+function AccuracyLineChart({ trend }: { trend: DayAccuracy[] }) {
+  const W = 320;
+  const H = 112;
+  const padL = 8;
+  const padR = 8;
+  const padT = 18;
+  const padB = 22;
+  const n = Math.max(trend.length, 1);
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+
+  const pts = trend.map((d, i) => {
+    const x = padL + (n === 1 ? innerW / 2 : (i / (n - 1)) * innerW);
+    const y =
+      d.total === 0 ? null : padT + (1 - d.rate / 100) * innerH;
+    return { x, y, d };
+  });
+
+  const segments: string[] = [];
+  let buf: string[] = [];
+  for (const p of pts) {
+    if (p.y == null) {
+      if (buf.length) {
+        segments.push(buf.join(" "));
+        buf = [];
+      }
+      continue;
+    }
+    buf.push(`${p.x},${p.y}`);
+  }
+  if (buf.length) segments.push(buf.join(" "));
+
+  return (
+    <div className="w-full">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="h-28 w-full overflow-visible"
+        role="img"
+        aria-label="최근 7일 정답률 선 그래프"
+      >
+        {/* guide lines */}
+        {[0, 50, 100].map((rate) => {
+          const y = padT + (1 - rate / 100) * innerH;
+          return (
+            <line
+              key={rate}
+              x1={padL}
+              x2={W - padR}
+              y1={y}
+              y2={y}
+              stroke="hsl(var(--border))"
+              strokeWidth={1}
+              strokeDasharray={rate === 0 || rate === 100 ? undefined : "3 3"}
+            />
+          );
+        })}
+        {segments.map((points, i) => (
+          <polyline
+            key={i}
+            fill="none"
+            stroke="hsl(var(--primary))"
+            strokeWidth={2.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            points={points}
+          />
+        ))}
+        {pts.map((p) =>
+          p.y == null ? (
+            <circle
+              key={p.d.date}
+              cx={p.x}
+              cy={padT + innerH}
+              r={2.5}
+              fill="hsl(var(--muted-foreground) / 0.35)"
+            />
+          ) : (
+            <g key={p.d.date}>
+              <title>{`${p.d.date}: ${p.d.correct}/${p.d.total} (${p.d.rate}%)`}</title>
+              <circle
+                cx={p.x}
+                cy={p.y}
+                r={4}
+                fill="hsl(var(--primary))"
+                stroke="hsl(var(--card))"
+                strokeWidth={2}
+              />
+              <text
+                x={p.x}
+                y={p.y - 8}
+                textAnchor="middle"
+                className="fill-muted-foreground"
+                style={{ fontSize: 9 }}
+              >
+                {p.d.rate}
+              </text>
+            </g>
+          )
+        )}
+        {pts.map((p) => (
+          <text
+            key={`lbl-${p.d.date}`}
+            x={p.x}
+            y={H - 4}
+            textAnchor="middle"
+            className="fill-muted-foreground"
+            style={{ fontSize: 9 }}
+          >
+            {p.d.date.slice(5).replace("-", "/")}
+          </text>
+        ))}
+      </svg>
     </div>
   );
 }
