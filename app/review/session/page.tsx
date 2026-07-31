@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ChevronLeft, Volume2 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { playWordAudio } from "@/lib/audio";
 import { recordReviewResult } from "@/lib/db";
 import {
   clearSession,
@@ -16,6 +18,40 @@ import {
   type SessionAnswer,
 } from "@/lib/reviewEngine";
 import { cn } from "@/lib/utils";
+
+function ListenPrompt({
+  phonetic,
+  word,
+  audioUrl,
+}: {
+  phonetic: string;
+  word: string;
+  audioUrl: string | null;
+}) {
+  useEffect(() => {
+    playWordAudio({ audioUrl, word });
+  }, [phonetic, word, audioUrl]);
+
+  return (
+    <button
+      type="button"
+      className="mt-3 w-full rounded-2xl bg-muted/40 px-4 py-5 text-center touch-manipulation transition hover:bg-muted/70 active:scale-[0.99]"
+      onClick={() => playWordAudio({ audioUrl, word })}
+      aria-label="발음 다시 듣기"
+    >
+      <p className="font-display text-3xl font-semibold tracking-wide">
+        {phonetic || "🔊"}
+      </p>
+      <p className="mt-2 text-xs text-muted-foreground">탭하여 다시 듣기</p>
+    </button>
+  );
+}
+
+function directionLabel(direction: string): string {
+  if (direction === "listen_to_ko") return "듣기 → 한";
+  if (direction === "en_to_ko") return "영 → 한";
+  return "한 → 영";
+}
 
 export default function ReviewSessionPage() {
   const { user } = useAuth();
@@ -50,6 +86,19 @@ export default function ReviewSessionPage() {
 
   const item = session.items[index];
   const progress = `${index + 1} / ${session.items.length}`;
+
+  const goBack = () => {
+    if (busy) return;
+    const answered = session.answers.length;
+    const ok =
+      answered === 0 ||
+      confirm(
+        `지금까지 ${answered}문제 푼 기록이 있어요. 설정 화면으로 돌아갈까요?`
+      );
+    if (!ok) return;
+    clearSession();
+    router.push("/review");
+  };
 
   const finishAnswer = async (
     isCorrect: boolean,
@@ -107,9 +156,42 @@ export default function ReviewSessionPage() {
   if (session.settings.mode === "flashcard") {
     return (
       <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">{progress}</p>
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-ml-2 gap-0.5 px-2 text-muted-foreground"
+            disabled={busy}
+            onClick={goBack}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            이전
+          </Button>
+          <p className="text-sm text-muted-foreground">{progress}</p>
+        </div>
         <div className="flex min-h-[240px] flex-col items-center justify-center rounded-3xl border border-border bg-card p-6 text-center">
           <p className="font-display text-3xl font-semibold">{item.word.word}</p>
+          {item.word.phonetic && (
+            <div className="mt-3 flex items-center justify-center gap-2">
+              <p className="font-display text-3xl font-semibold tracking-wide text-muted-foreground">
+                {item.word.phonetic}
+              </p>
+              <button
+                type="button"
+                className="inline-flex shrink-0 items-center justify-center rounded-xl p-2 text-muted-foreground touch-manipulation transition hover:bg-muted hover:text-foreground active:scale-[0.98]"
+                onClick={() =>
+                  playWordAudio({
+                    audioUrl: item.word.audio_url,
+                    word: item.word.word,
+                  })
+                }
+                aria-label="발음 듣기"
+              >
+                <Volume2 className="h-6 w-6" />
+              </button>
+            </div>
+          )}
           {flipped && (
             <div className="mt-6 space-y-2 animate-in fade-in">
               <p className="text-lg font-medium">
@@ -156,13 +238,34 @@ export default function ReviewSessionPage() {
   // Test
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">{progress}</p>
+      <div className="flex items-center justify-between gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="-ml-2 gap-0.5 px-2 text-muted-foreground"
+          disabled={busy}
+          onClick={goBack}
+        >
+          <ChevronLeft className="h-4 w-4" />
+          이전
+        </Button>
+        <p className="text-sm text-muted-foreground">{progress}</p>
+      </div>
       <div className="rounded-3xl border border-border bg-card p-6">
         <p className="text-xs font-medium text-muted-foreground">
-          {item.direction === "en_to_ko" ? "영 → 한" : "한 → 영"}
-          {item.testType === "multiple_choice" ? " · 객관식" : " · 직접 입력"}
+          {directionLabel(item.direction)}
+          {item.testType === "multiple_choice" ? " · 객관식" : " · 주관식"}
         </p>
-        <p className="mt-3 font-display text-2xl font-semibold">{item.prompt}</p>
+        {item.direction === "listen_to_ko" ? (
+          <ListenPrompt
+            phonetic={item.prompt}
+            word={item.word.word}
+            audioUrl={item.word.audio_url}
+          />
+        ) : (
+          <p className="mt-3 font-display text-2xl font-semibold">{item.prompt}</p>
+        )}
       </div>
 
       {item.testType === "multiple_choice" && item.choices ? (
@@ -184,13 +287,11 @@ export default function ReviewSessionPage() {
               )}
               onClick={() => {
                 setAnswer(c);
-                const ok =
-                  item.direction === "en_to_ko"
-                    ? item.word.meanings.some(
-                        (m) => m.trim().toLowerCase() === c.trim().toLowerCase()
-                      ) || c === item.correctAnswer
-                    : gradeAnswer(item.direction, item.word, c);
-                void finishAnswer(ok, c);
+                void finishAnswer(
+                  gradeAnswer(item.direction, item.word, c) ||
+                    c === item.correctAnswer,
+                  c
+                );
               }}
             >
               {c}

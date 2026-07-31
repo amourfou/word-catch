@@ -17,7 +17,7 @@ export interface DbUser {
 export type WordStatus = "unknown" | "learning" | "mastered";
 export type ReviewMode = "flashcard" | "test";
 export type TestType = "multiple_choice" | "direct_input";
-export type ReviewDirection = "en_to_ko" | "ko_to_en";
+export type ReviewDirection = "en_to_ko" | "ko_to_en" | "listen_to_ko";
 
 export interface WordRow {
   id: string;
@@ -25,6 +25,8 @@ export interface WordRow {
   word: string;
   meanings: string[];
   part_of_speech: string | null;
+  phonetic: string | null;
+  audio_url: string | null;
   source: string | null;
   memo: string | null;
   status: WordStatus;

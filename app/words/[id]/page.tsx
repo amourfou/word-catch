@@ -4,12 +4,18 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
+import { WordVerifyField } from "@/components/WordVerifyField";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { deleteWord, getWord, listSources, updateWord } from "@/lib/db";
-import { PARTS_OF_SPEECH } from "@/lib/pos";
+import {
+  PARTS_OF_SPEECH,
+  formatMeaningEntry,
+  meaningPos,
+  meaningTextOnly,
+} from "@/lib/pos";
 import type { SourceRow, WordRow } from "@/lib/supabase";
 
 export default function WordDetailPage() {
@@ -20,6 +26,8 @@ export default function WordDetailPage() {
   const meaningRef = useRef<HTMLInputElement>(null);
   const [wordRow, setWordRow] = useState<WordRow | null>(null);
   const [word, setWord] = useState("");
+  const [phonetic, setPhonetic] = useState("");
+  const [audioUrl, setAudioUrl] = useState("");
   const [meaningDraft, setMeaningDraft] = useState("");
   const [meanings, setMeanings] = useState<string[]>([]);
   const [source, setSource] = useState("");
@@ -46,32 +54,50 @@ export default function WordDetailPage() {
       }
       setWordRow(row);
       setWord(row.word);
+      setPhonetic(row.phonetic ?? "");
+      setAudioUrl(row.audio_url ?? "");
       setMeanings(row.meanings.length ? row.meanings : []);
       setMeaningDraft("");
       setSource(row.source ?? "");
-      // keep custom POS if not in list
-      setPartOfSpeech(row.part_of_speech ?? "");
+      setPartOfSpeech(
+        row.part_of_speech || meaningPos(row.meanings[0] ?? "") || ""
+      );
       setMemo(row.memo ?? "");
       setLoading(false);
     })();
   }, [user, id]);
 
   const addMeaning = () => {
-    const trimmed = meaningDraft.trim();
-    if (!trimmed) return;
-    if (meanings.some((m) => m === trimmed)) {
+    const entry = formatMeaningEntry(partOfSpeech, meaningDraft);
+    if (!entry) return;
+    if (
+      meanings.some(
+        (m) =>
+          m === entry ||
+          meaningTextOnly(m) === meaningTextOnly(entry)
+      )
+    ) {
       setMeaningDraft("");
       return;
     }
-    setMeanings((prev) => [...prev, trimmed]);
+    setMeanings((prev) => [...prev, entry]);
     setMeaningDraft("");
     meaningRef.current?.focus();
   };
 
   const collectMeanings = () => {
-    const draft = meaningDraft.trim();
+    const entry = formatMeaningEntry(partOfSpeech, meaningDraft);
     const list = [...meanings];
-    if (draft && !list.includes(draft)) list.push(draft);
+    if (
+      entry &&
+      !list.some(
+        (m) =>
+          m === entry ||
+          meaningTextOnly(m) === meaningTextOnly(entry)
+      )
+    ) {
+      list.push(entry);
+    }
     return list;
   };
 
@@ -90,7 +116,10 @@ export default function WordDetailPage() {
         word,
         meanings: finalMeanings,
         source,
-        part_of_speech: partOfSpeech,
+        part_of_speech:
+          meaningPos(finalMeanings[0] ?? "") || partOfSpeech || null,
+        phonetic: phonetic || null,
+        audio_url: audioUrl || null,
         memo,
       });
       setWordRow(updated);
@@ -133,13 +162,15 @@ export default function WordDetailPage() {
       </div>
 
       <form onSubmit={onSubmit} className="space-y-2.5">
-        <Input
-          id="word"
-          value={word}
-          onChange={(e) => setWord(e.target.value)}
-          placeholder="영어 단어"
-          aria-label="영어 단어"
+        <WordVerifyField
+          word={word}
+          onWordChange={setWord}
+          phonetic={phonetic}
+          onPhoneticChange={setPhonetic}
+          audioUrl={audioUrl}
+          onAudioUrlChange={setAudioUrl}
           required
+          placeholder="영어 단어"
         />
 
         <div>
@@ -171,7 +202,7 @@ export default function WordDetailPage() {
                   addMeaning();
                 }
               }}
-              placeholder="뜻 추가"
+              placeholder="뜻 (예: 주저하다)"
               aria-label="뜻"
               className="min-w-0 flex-1"
             />

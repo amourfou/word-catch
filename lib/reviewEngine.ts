@@ -3,6 +3,7 @@ import {
   startOfTodaySeoulIso,
   startOfWeekSeoulIso,
 } from "@/lib/date";
+import { meaningTextOnly } from "@/lib/pos";
 import type {
   ReviewDirection,
   ReviewMode,
@@ -22,7 +23,9 @@ export type ReviewTarget =
 
 export interface ReviewSettings {
   mode: ReviewMode;
-  direction: "en_to_ko" | "ko_to_en" | "mixed";
+  direction: "en_to_ko" | "ko_to_en" | "listen_to_ko" | "mixed";
+  /** Test answer format — ignored for flashcard. */
+  testFormat: TestType;
   targets: ReviewTarget[];
   /** Empty = no source filter. When set, AND with status/date targets. */
   sources: string[];
@@ -72,21 +75,31 @@ export function normalizeAnswer(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+/** Meaning answers: ignore all whitespace (띄어쓰기 무시). */
+export function normalizeMeaningAnswer(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, "");
+}
+
 /** KO↔EN: any one of meanings matching (or word for en side). */
 export function gradeAnswer(
   direction: ReviewDirection,
   word: WordRow,
   userAnswer: string
 ): boolean {
-  const normalized = normalizeAnswer(userAnswer);
-  if (!normalized) return false;
-
   if (direction === "ko_to_en") {
+    const normalized = normalizeAnswer(userAnswer);
+    if (!normalized) return false;
     return normalizeAnswer(word.word) === normalized;
   }
 
-  // en_to_ko — any meaning
-  return word.meanings.some((m) => normalizeAnswer(m) === normalized);
+  // en_to_ko / listen_to_ko — full "vt. 주저하다" or bare "주저하다"
+  const normalized = normalizeMeaningAnswer(userAnswer);
+  if (!normalized) return false;
+  return word.meanings.some((m) => {
+    const full = normalizeMeaningAnswer(m);
+    const text = normalizeMeaningAnswer(meaningTextOnly(m));
+    return full === normalized || (!!text && text === normalized);
+  });
 }
 
 export function shouldUseDirectInput(word: WordRow): boolean {
@@ -102,22 +115,25 @@ function pickDirection(
   return setting;
 }
 
+function isKoAnswerDirection(direction: ReviewDirection): boolean {
+  return direction === "en_to_ko" || direction === "listen_to_ko";
+}
+
 function buildChoices(
   word: WordRow,
   direction: ReviewDirection,
   pool: WordRow[]
 ): string[] {
-  const correct =
-    direction === "en_to_ko"
-      ? word.meanings[0] ?? ""
-      : word.word;
+  const correct = isKoAnswerDirection(direction)
+    ? word.meanings[0] ?? ""
+    : word.word;
 
   const distractors: string[] = [];
   const others = shuffle(pool.filter((w) => w.id !== word.id));
 
   for (const w of others) {
     if (distractors.length >= 3) break;
-    if (direction === "en_to_ko") {
+    if (isKoAnswerDirection(direction)) {
       const m = w.meanings[0];
       if (m && normalizeAnswer(m) !== normalizeAnswer(correct) && !distractors.includes(m)) {
         distractors.push(m);
@@ -143,38 +159,81 @@ function buildChoices(
   return shuffle([correct, ...distractors.slice(0, 3)]);
 }
 
+/** Prefer unknown words; learning next; mastered least. */
+function pickWeight(word: WordRow): number {
+  const base =
+    word.status === "unknown" ? 5 : word.status === "learning" ? 2 : 1;
+  return base + Math.min(word.wrong_count, 3);
+}
+
+/** Weighted sample without replacement, then shuffle order. */
+export function pickWordsForReview(words: WordRow[], count: number): WordRow[] {
+  const n = Math.min(Math.max(0, count), words.length);
+  if (n === 0) return [];
+  if (n >= words.length) return shuffle(words);
+
+  const remaining = [...words];
+  const picked: WordRow[] = [];
+
+  for (let i = 0; i < n; i++) {
+    const total = remaining.reduce((sum, w) => sum + pickWeight(w), 0);
+    let r = Math.random() * total;
+    let idx = remaining.length - 1;
+    for (let j = 0; j < remaining.length; j++) {
+      r -= pickWeight(remaining[j]);
+      if (r <= 0) {
+        idx = j;
+        break;
+      }
+    }
+    picked.push(remaining[idx]);
+    remaining.splice(idx, 1);
+  }
+
+  return shuffle(picked);
+}
+
+function buildOneItem(
+  word: WordRow,
+  settings: ReviewSettings,
+  poolForChoices: WordRow[]
+): ReviewItem {
+  const direction =
+    settings.mode === "flashcard" ? "en_to_ko" : pickDirection(settings.direction);
+
+  let testType: TestType | null = null;
+  let choices: string[] | null = null;
+  let prompt = word.word;
+  let correctAnswer = word.meanings.join(", ");
+
+  if (settings.mode === "test") {
+    testType = settings.testFormat;
+    if (direction === "listen_to_ko") {
+      prompt = word.phonetic?.trim() || "🔊";
+      correctAnswer = word.meanings[0] ?? "";
+    } else if (direction === "en_to_ko") {
+      prompt = word.word;
+      correctAnswer = word.meanings[0] ?? "";
+    } else {
+      prompt = word.meanings[0] ?? "";
+      correctAnswer = word.word;
+    }
+    if (testType === "multiple_choice") {
+      choices = buildChoices(word, direction, poolForChoices);
+    }
+  }
+
+  return { word, direction, testType, choices, prompt, correctAnswer };
+}
+
+/** Pick N words (unknown-heavy), fully build every item, then return. */
 export function buildReviewItems(
   words: WordRow[],
   settings: ReviewSettings,
   poolForChoices: WordRow[]
 ): ReviewItem[] {
-  const picked = shuffle(words).slice(0, settings.count);
-
-  return picked.map((word) => {
-    const direction =
-      settings.mode === "flashcard" ? "en_to_ko" : pickDirection(settings.direction);
-
-    let testType: TestType | null = null;
-    let choices: string[] | null = null;
-    let prompt = word.word;
-    let correctAnswer = word.meanings.join(", ");
-
-    if (settings.mode === "test") {
-      testType = shouldUseDirectInput(word) ? "direct_input" : "multiple_choice";
-      if (direction === "en_to_ko") {
-        prompt = word.word;
-        correctAnswer = word.meanings[0] ?? "";
-      } else {
-        prompt = word.meanings[0] ?? "";
-        correctAnswer = word.word;
-      }
-      if (testType === "multiple_choice") {
-        choices = buildChoices(word, direction, poolForChoices);
-      }
-    }
-
-    return { word, direction, testType, choices, prompt, correctAnswer };
-  });
+  const picked = pickWordsForReview(words, settings.count);
+  return picked.map((word) => buildOneItem(word, settings, poolForChoices));
 }
 
 const STATUS_DATE_TARGETS: ReviewTarget[] = [
@@ -222,6 +281,7 @@ export function defaultReviewSettings(): ReviewSettings {
   return {
     mode: "test",
     direction: "mixed",
+    testFormat: "multiple_choice",
     targets: ["today", "unknown", "learning"],
     sources: [],
     count: 10,

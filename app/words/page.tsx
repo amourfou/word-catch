@@ -411,7 +411,14 @@ export default function WordsPage() {
               <Link href={`/words/${w.id}`} className="block">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-lg font-semibold">{w.word}</p>
+                    <p className="text-lg font-semibold">
+                      {w.word}
+                      {w.phonetic && (
+                        <span className="ml-2 text-sm font-normal text-muted-foreground">
+                          {w.phonetic}
+                        </span>
+                      )}
+                    </p>
                     <p className="mt-0.5 text-sm text-muted-foreground">
                       {w.meanings[0]}
                       {w.meanings.length > 1

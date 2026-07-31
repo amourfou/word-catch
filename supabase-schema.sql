@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS wordcatch_words (
   word TEXT NOT NULL,
   meanings TEXT[] NOT NULL,
   part_of_speech TEXT,
+  phonetic TEXT,
+  audio_url TEXT,
   source TEXT,
   memo TEXT,
   status TEXT NOT NULL DEFAULT 'unknown'
@@ -26,7 +28,7 @@ CREATE TABLE IF NOT EXISTS wordcatch_review_logs (
   word_id UUID NOT NULL REFERENCES wordcatch_words(id) ON DELETE CASCADE,
   mode TEXT NOT NULL CHECK (mode IN ('flashcard', 'test')),
   test_type TEXT CHECK (test_type IS NULL OR test_type IN ('multiple_choice', 'direct_input')),
-  direction TEXT CHECK (direction IS NULL OR direction IN ('en_to_ko', 'ko_to_en')),
+  direction TEXT CHECK (direction IS NULL OR direction IN ('en_to_ko', 'ko_to_en', 'listen_to_ko')),
   user_answer TEXT,
   is_correct BOOLEAN,
   reviewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

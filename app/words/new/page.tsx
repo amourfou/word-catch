@@ -4,11 +4,17 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
+import { WordVerifyField } from "@/components/WordVerifyField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { createWord, listSources } from "@/lib/db";
-import { PARTS_OF_SPEECH } from "@/lib/pos";
+import {
+  PARTS_OF_SPEECH,
+  formatMeaningEntry,
+  meaningPos,
+  meaningTextOnly,
+} from "@/lib/pos";
 import type { SourceRow } from "@/lib/supabase";
 
 export default function NewWordPage() {
@@ -17,6 +23,8 @@ export default function NewWordPage() {
   const wordRef = useRef<HTMLInputElement>(null);
   const meaningRef = useRef<HTMLInputElement>(null);
   const [word, setWord] = useState("");
+  const [phonetic, setPhonetic] = useState("");
+  const [audioUrl, setAudioUrl] = useState("");
   const [meaningDraft, setMeaningDraft] = useState("");
   const [meanings, setMeanings] = useState<string[]>([]);
   const [source, setSource] = useState("");
@@ -40,6 +48,8 @@ export default function NewWordPage() {
 
   const resetForm = () => {
     setWord("");
+    setPhonetic("");
+    setAudioUrl("");
     setMeaningDraft("");
     setMeanings([]);
     setPartOfSpeech("");
@@ -49,21 +59,36 @@ export default function NewWordPage() {
   };
 
   const addMeaning = () => {
-    const trimmed = meaningDraft.trim();
-    if (!trimmed) return;
-    if (meanings.some((m) => m === trimmed)) {
+    const entry = formatMeaningEntry(partOfSpeech, meaningDraft);
+    if (!entry) return;
+    if (
+      meanings.some(
+        (m) =>
+          m === entry ||
+          meaningTextOnly(m) === meaningTextOnly(entry)
+      )
+    ) {
       setMeaningDraft("");
       return;
     }
-    setMeanings((prev) => [...prev, trimmed]);
+    setMeanings((prev) => [...prev, entry]);
     setMeaningDraft("");
     meaningRef.current?.focus();
   };
 
   const collectMeanings = () => {
-    const draft = meaningDraft.trim();
+    const entry = formatMeaningEntry(partOfSpeech, meaningDraft);
     const list = [...meanings];
-    if (draft && !list.includes(draft)) list.push(draft);
+    if (
+      entry &&
+      !list.some(
+        (m) =>
+          m === entry ||
+          meaningTextOnly(m) === meaningTextOnly(entry)
+      )
+    ) {
+      list.push(entry);
+    }
     return list;
   };
 
@@ -83,7 +108,10 @@ export default function NewWordPage() {
         word,
         meanings: finalMeanings,
         source,
-        part_of_speech: partOfSpeech,
+        part_of_speech:
+          meaningPos(finalMeanings[0] ?? "") || partOfSpeech || undefined,
+        phonetic: phonetic || undefined,
+        audio_url: audioUrl || undefined,
         memo,
       });
       setMessage(`「${word.trim()}」 저장했어요. 다음 단어를 입력하세요.`);
@@ -108,16 +136,16 @@ export default function NewWordPage() {
       </div>
 
       <form onSubmit={onSubmit} className="space-y-2.5">
-        <Input
-          id="word"
-          ref={wordRef}
-          value={word}
-          onChange={(e) => setWord(e.target.value)}
-          placeholder="영어 단어 (예: hesitate)"
-          aria-label="영어 단어"
-          autoCapitalize="off"
-          autoCorrect="off"
+        <WordVerifyField
+          word={word}
+          onWordChange={setWord}
+          phonetic={phonetic}
+          onPhoneticChange={setPhonetic}
+          audioUrl={audioUrl}
+          onAudioUrlChange={setAudioUrl}
+          inputRef={wordRef}
           required
+          placeholder="영어 단어 (예: hesitate)"
         />
 
         <div>
@@ -146,7 +174,7 @@ export default function NewWordPage() {
                   addMeaning();
                 }
               }}
-              placeholder="뜻 (문맥에 맞게)"
+              placeholder="뜻 (예: 주저하다)"
               aria-label="뜻"
               className="min-w-0 flex-1"
             />

@@ -21,6 +21,8 @@ export interface CreateWordInput {
   word: string;
   meanings: string[];
   part_of_speech?: string;
+  phonetic?: string;
+  audio_url?: string;
   source?: string;
   memo?: string;
 }
@@ -29,6 +31,8 @@ export interface UpdateWordInput {
   word?: string;
   meanings?: string[];
   part_of_speech?: string | null;
+  phonetic?: string | null;
+  audio_url?: string | null;
   source?: string | null;
   memo?: string | null;
 }
@@ -131,6 +135,8 @@ export async function createWord(
         word: input.word.trim(),
         meanings,
         part_of_speech: input.part_of_speech?.trim() || null,
+        phonetic: input.phonetic?.trim() || null,
+        audio_url: input.audio_url?.trim() || null,
         source,
         memo: input.memo?.trim() || null,
         status: "unknown",
@@ -158,6 +164,12 @@ export async function updateWord(
   }
   if (input.part_of_speech !== undefined) {
     patch.part_of_speech = input.part_of_speech?.trim() || null;
+  }
+  if (input.phonetic !== undefined) {
+    patch.phonetic = input.phonetic?.trim() || null;
+  }
+  if (input.audio_url !== undefined) {
+    patch.audio_url = input.audio_url?.trim() || null;
   }
   if (input.source !== undefined) {
     const source = input.source?.trim() || null;
@@ -305,6 +317,7 @@ export interface WrongWordStat {
   wordId: string;
   word: string;
   wrongCount: number;
+  status: WordStatus;
 }
 
 /** Last 7 KST calendar days of review accuracy (oldest → newest). */
@@ -355,7 +368,7 @@ export async function getTopWrongWords(
 ): Promise<WrongWordStat[]> {
   const { data, error } = await supabase
     .from("wordcatch_words")
-    .select("id, word, wrong_count")
+    .select("id, word, wrong_count, status")
     .eq("user_id", userId)
     .gt("wrong_count", 0)
     .order("wrong_count", { ascending: false })
@@ -365,5 +378,6 @@ export async function getTopWrongWords(
     wordId: r.id as string,
     word: r.word as string,
     wrongCount: r.wrong_count as number,
+    status: r.status as WordStatus,
   }));
 }

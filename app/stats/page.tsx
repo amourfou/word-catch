@@ -135,10 +135,13 @@ export default function StatsPage() {
               <li key={w.wordId}>
                 <Link
                   href={`/words/${w.wordId}`}
-                  className="flex items-center justify-between rounded-xl bg-muted/50 px-3 py-2.5 touch-manipulation hover:bg-muted"
+                  className="flex items-center justify-between gap-2 rounded-xl bg-muted/50 px-3 py-2.5 touch-manipulation hover:bg-muted"
                 >
-                  <span className="font-medium">{w.word}</span>
-                  <span className="text-xs text-destructive tabular-nums">
+                  <div className="min-w-0 flex flex-1 items-center gap-2">
+                    <span className="truncate font-medium">{w.word}</span>
+                    <StatusBadge status={w.status} />
+                  </div>
+                  <span className="shrink-0 text-xs text-destructive tabular-nums">
                     오답 {w.wrongCount}회
                   </span>
                 </Link>

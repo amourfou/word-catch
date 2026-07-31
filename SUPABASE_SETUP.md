@@ -9,6 +9,11 @@ ShortJapan / HaanRiver / nextLotto와 **동일한 Supabase 프로젝트**를 사
 2. `supabase-schema.sql` 내용을 복사해 실행
 3. `wordcatch_words`, `wordcatch_review_logs`, `wordcatch_sources` 테이블이 생성됩니다
 
+이미 테이블이 있는 경우, 추가 마이그레이션:
+
+1. `supabase-migration-phonetic.sql` → `phonetic` 컬럼
+2. `supabase-migration-audio.sql` → `audio_url` 컬럼 + 듣기 복습 방향
+
 ## 2. 환경 변수
 
 프로젝트 루트에 `.env.local` 파일을 만들고 ShortJapan과 동일한 값을 넣으세요.

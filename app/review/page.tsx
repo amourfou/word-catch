@@ -14,6 +14,10 @@ import {
   type ReviewSettings,
   type ReviewTarget,
 } from "@/lib/reviewEngine";
+import {
+  loadReviewPrefs,
+  saveReviewPrefs,
+} from "@/lib/reviewSettingsStorage";
 import type { SourceRow } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -25,18 +29,60 @@ export default function ReviewSetupPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [sources, setSources] = useState<SourceRow[]>([]);
+  const [prefsReady, setPrefsReady] = useState(false);
 
   useEffect(() => {
     if (!user) return;
+    const saved = loadReviewPrefs(user.id);
+    setSettings({
+      mode: saved.mode,
+      direction: saved.direction,
+      testFormat: saved.testFormat,
+      targets: saved.targets,
+      sources: saved.sources,
+      count: saved.count,
+    });
+    const preset = [5, 10, 15, 20];
+    setCustomCount(preset.includes(saved.count) ? "" : String(saved.count));
     void listSources(user.id).then((list) => {
       setSources(list);
-      if (list.length === 1) {
-        setSettings((s) =>
-          s.sources.length === 0 ? { ...s, sources: [list[0].name] } : s
-        );
-      }
+      const known = new Set(list.map((x) => x.name));
+      setSettings((s) => {
+        const kept = s.sources.filter((name) => known.has(name));
+        if (kept.length === 0 && list.length === 1) {
+          return { ...s, sources: [list[0].name] };
+        }
+        return kept.length === s.sources.length ? s : { ...s, sources: kept };
+      });
+      setPrefsReady(true);
     });
   }, [user]);
+
+  const count =
+    customCount.trim() !== ""
+      ? Math.max(1, Math.min(100, Number(customCount) || 10))
+      : settings.count;
+
+  useEffect(() => {
+    if (!user || !prefsReady) return;
+    saveReviewPrefs(user.id, {
+      mode: settings.mode,
+      direction: settings.direction,
+      testFormat: settings.testFormat,
+      targets: settings.targets,
+      sources: settings.sources,
+      count,
+    });
+  }, [
+    user,
+    prefsReady,
+    settings.mode,
+    settings.direction,
+    settings.testFormat,
+    settings.targets,
+    settings.sources,
+    count,
+  ]);
 
   const toggleTarget = (t: ReviewTarget) => {
     setSettings((s) => {
@@ -65,11 +111,6 @@ export default function ReviewSetupPage() {
     });
   };
 
-  const count =
-    customCount.trim() !== ""
-      ? Math.max(1, Math.min(100, Number(customCount) || 10))
-      : settings.count;
-
   const start = async () => {
     if (!user) return;
     setBusy(true);
@@ -86,13 +127,16 @@ export default function ReviewSetupPage() {
         setBusy(false);
         return;
       }
-      const items = buildReviewItems(
-        filtered,
-        { ...settings, count },
-        all
-      );
+      const sessionSettings = { ...settings, count };
+      // Build the full question set first, then enter the session.
+      const items = buildReviewItems(filtered, sessionSettings, all);
+      if (items.length === 0) {
+        setError("문제를 만들 수 없어요.");
+        setBusy(false);
+        return;
+      }
       saveSession({
-        settings: { ...settings, count },
+        settings: sessionSettings,
         items,
         answers: [],
         startedAt: new Date().toISOString(),
@@ -129,23 +173,42 @@ export default function ReviewSetupPage() {
       </div>
 
       {settings.mode === "test" && (
-        <div className="grid grid-cols-3 gap-2">
-          {(
-            [
-              ["mixed", "섞어서"],
-              ["en_to_ko", "영→한"],
-              ["ko_to_en", "한→영"],
-            ] as const
-          ).map(([v, label]) => (
-            <SelectBtn
-              key={v}
-              active={settings.direction === v}
-              onClick={() => setSettings((s) => ({ ...s, direction: v }))}
-            >
-              {label}
-            </SelectBtn>
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                ["mixed", "섞어서"],
+                ["en_to_ko", "영→한"],
+                ["ko_to_en", "한→영"],
+                ["listen_to_ko", "듣기→한"],
+              ] as const
+            ).map(([v, label]) => (
+              <SelectBtn
+                key={v}
+                active={settings.direction === v}
+                onClick={() => setSettings((s) => ({ ...s, direction: v }))}
+              >
+                {label}
+              </SelectBtn>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                ["multiple_choice", "객관식"],
+                ["direct_input", "주관식"],
+              ] as const
+            ).map(([v, label]) => (
+              <SelectBtn
+                key={v}
+                active={settings.testFormat === v}
+                onClick={() => setSettings((s) => ({ ...s, testFormat: v }))}
+              >
+                {label}
+              </SelectBtn>
+            ))}
+          </div>
+        </>
       )}
 
       <div className="space-y-2">
@@ -226,7 +289,14 @@ export default function ReviewSetupPage() {
             min={1}
             max={100}
             value={customCount}
-            onChange={(e) => setCustomCount(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setCustomCount(v);
+              const n = Number(v);
+              if (v.trim() && Number.isFinite(n) && n >= 1 && n <= 100) {
+                setSettings((s) => ({ ...s, count: Math.round(n) }));
+              }
+            }}
             placeholder="직접"
             aria-label="문제 수 직접 입력"
             className={cn(

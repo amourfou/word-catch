@@ -1,3 +1,5 @@
+import { meaningTextOnly } from "@/lib/pos";
+
 /**
  * Search patterns (case-insensitive):
  * - `h` or `h*`  → starts with h
@@ -55,7 +57,11 @@ export function wordMatchesSearch(
 ): boolean {
   if (!query.trim()) return true;
   if (isMeaningSearchQuery(query)) {
-    return meanings.some((m) => matchSearchPattern(m, query));
+    return meanings.some(
+      (m) =>
+        matchSearchPattern(m, query) ||
+        matchSearchPattern(meaningTextOnly(m), query)
+    );
   }
   return matchSearchPattern(word, query);
 }
