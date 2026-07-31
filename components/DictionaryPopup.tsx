@@ -33,6 +33,12 @@ export function DictionaryPopup({
       if (cancelled) return;
       if (!result.ok) {
         setError(result.message);
+      } else if (!result.exact) {
+        setError(
+          result.suggested
+            ? `표제어로 일치하는 항목이 없어요. (유사: ${result.suggested})`
+            : "표제어로 일치하는 항목이 없어요."
+        );
       } else {
         setEntry(result.entry);
       }

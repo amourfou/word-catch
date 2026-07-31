@@ -4,9 +4,42 @@ import {
   startOfTodaySeoulIso,
   startOfWeekSeoulIso,
 } from "@/lib/date";
+import { addDictionaryLearner } from "@/lib/dictionaryCache";
 import { applyMasteryResult } from "@/lib/mastery";
-import { supabase, type ReviewLogRow, type SourceRow, type WordRow, type WordStatus } from "@/lib/supabase";
+import {
+  supabase,
+  type ReviewLogRow,
+  type SourceRow,
+  type WordIdiom,
+  type WordRow,
+  type WordStatus,
+} from "@/lib/supabase";
 import type { ReviewDirection, ReviewMode, TestType } from "@/lib/supabase";
+
+function escapeIlike(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
+async function findUserWordBySpelling(
+  userId: string,
+  word: string
+): Promise<WordRow | null> {
+  const { data, error } = await supabase
+    .from("wordcatch_words")
+    .select("*")
+    .eq("user_id", userId)
+    .ilike("word", escapeIlike(word.trim()))
+    .maybeSingle();
+  if (error) {
+    console.error("findUserWordBySpelling", error);
+    return null;
+  }
+  return data as WordRow | null;
+}
+
+function isUniqueViolation(error: { code?: string } | null | undefined): boolean {
+  return error?.code === "23505";
+}
 
 export type DateFilter = "today" | "week" | "month" | "all";
 
@@ -24,6 +57,7 @@ export interface CreateWordInput {
   phonetic?: string;
   audio_url?: string;
   source?: string;
+  idioms?: WordIdiom[];
   memo?: string;
 }
 
@@ -34,7 +68,24 @@ export interface UpdateWordInput {
   phonetic?: string | null;
   audio_url?: string | null;
   source?: string | null;
+  idioms?: WordIdiom[];
   memo?: string | null;
+}
+
+function normalizeIdioms(idioms: WordIdiom[] | undefined): WordIdiom[] {
+  if (!idioms) return [];
+  const seen = new Set<string>();
+  const out: WordIdiom[] = [];
+  for (const raw of idioms) {
+    const phrase = raw.phrase?.trim() ?? "";
+    const meaning = raw.meaning?.trim() ?? "";
+    if (!phrase || !meaning) continue;
+    const key = phrase.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ phrase, meaning });
+  }
+  return out;
 }
 
 export async function listWords(
@@ -121,23 +172,37 @@ export async function createWord(
   input: CreateWordInput
 ): Promise<WordRow> {
   const meanings = input.meanings.map((m) => m.trim()).filter(Boolean);
-  if (!input.word.trim()) throw new Error("단어를 입력해 주세요.");
+  const trimmedWord = input.word.trim();
+  if (!trimmedWord) throw new Error("단어를 입력해 주세요.");
   if (meanings.length === 0) throw new Error("뜻을 하나 이상 입력해 주세요.");
+
+  const dup = await findUserWordBySpelling(userId, trimmedWord);
+  if (dup) throw new Error("이미 등록한 단어예요.");
 
   const source = input.source?.trim() || null;
   if (source) await upsertSource(userId, source);
+
+  const phonetic = input.phonetic?.trim() || null;
+  const audioUrl = input.audio_url?.trim() || null;
+  const idioms = normalizeIdioms(input.idioms);
+  const dictionaryId = await addDictionaryLearner({
+    userId,
+    word: trimmedWord,
+  });
 
   const { data, error } = await supabase
     .from("wordcatch_words")
     .insert([
       {
         user_id: userId,
-        word: input.word.trim(),
+        dictionary_id: dictionaryId,
+        word: trimmedWord,
         meanings,
         part_of_speech: input.part_of_speech?.trim() || null,
-        phonetic: input.phonetic?.trim() || null,
-        audio_url: input.audio_url?.trim() || null,
+        phonetic,
+        audio_url: audioUrl,
         source,
+        idioms,
         memo: input.memo?.trim() || null,
         status: "unknown",
       },
@@ -147,6 +212,7 @@ export async function createWord(
 
   if (error || !data) {
     console.error("createWord", error);
+    if (isUniqueViolation(error)) throw new Error("이미 등록한 단어예요.");
     throw error ?? new Error("저장 실패");
   }
   return data as WordRow;
@@ -176,7 +242,20 @@ export async function updateWord(
     patch.source = source;
     if (source) await upsertSource(userId, source);
   }
+  if (input.idioms !== undefined) patch.idioms = normalizeIdioms(input.idioms);
   if (input.memo !== undefined) patch.memo = input.memo?.trim() || null;
+
+  if (input.word !== undefined) {
+    const nextWord = input.word.trim();
+    const dup = await findUserWordBySpelling(userId, nextWord);
+    if (dup && dup.id !== id) throw new Error("이미 등록한 단어예요.");
+
+    const dictionaryId = await addDictionaryLearner({
+      userId,
+      word: nextWord,
+    });
+    if (dictionaryId) patch.dictionary_id = dictionaryId;
+  }
 
   const { data, error } = await supabase
     .from("wordcatch_words")
@@ -188,6 +267,7 @@ export async function updateWord(
 
   if (error || !data) {
     console.error("updateWord", error);
+    if (isUniqueViolation(error)) throw new Error("이미 등록한 단어예요.");
     throw error ?? new Error("수정 실패");
   }
   return data as WordRow;

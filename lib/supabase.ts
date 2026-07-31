@@ -19,15 +19,36 @@ export type ReviewMode = "flashcard" | "test";
 export type TestType = "multiple_choice" | "direct_input";
 export type ReviewDirection = "en_to_ko" | "ko_to_en" | "listen_to_ko";
 
+export interface WordIdiom {
+  phrase: string;
+  meaning: string;
+}
+
+export interface DictionaryRow {
+  id: string;
+  word_key: string;
+  word: string;
+  phonetic: string | null;
+  audio_url: string | null;
+  entry: unknown;
+  raw: unknown;
+  source: string | null;
+  learner_user_ids: string[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface WordRow {
   id: string;
   user_id: string;
+  dictionary_id: string | null;
   word: string;
   meanings: string[];
   part_of_speech: string | null;
   phonetic: string | null;
   audio_url: string | null;
   source: string | null;
+  idioms: WordIdiom[];
   memo: string | null;
   status: WordStatus;
   wrong_count: number;

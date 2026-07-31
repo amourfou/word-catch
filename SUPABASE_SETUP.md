@@ -7,12 +7,14 @@ ShortJapan / HaanRiver / nextLotto와 **동일한 Supabase 프로젝트**를 사
 
 1. [Supabase](https://supabase.com) 대시보드 → **SQL Editor**
 2. `supabase-schema.sql` 내용을 복사해 실행
-3. `wordcatch_words`, `wordcatch_review_logs`, `wordcatch_sources` 테이블이 생성됩니다
+3. `wordcatch_dictionary`, `wordcatch_words`, `wordcatch_review_logs`, `wordcatch_sources` 테이블이 생성됩니다
 
 이미 테이블이 있는 경우, 추가 마이그레이션:
 
 1. `supabase-migration-phonetic.sql` → `phonetic` 컬럼
 2. `supabase-migration-audio.sql` → `audio_url` 컬럼 + 듣기 복습 방향
+3. `supabase-migration-dictionary.sql` → 공유 사전 캐시 + 사용자별 단어 중복 방지
+4. `supabase-migration-idioms.sql` → 숙어(`idioms` JSONB: phrase + meaning)
 
 ## 2. 환경 변수
 

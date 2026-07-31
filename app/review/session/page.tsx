@@ -197,6 +197,19 @@ export default function ReviewSessionPage() {
               <p className="text-lg font-medium">
                 {item.word.meanings.join(" · ")}
               </p>
+              {item.word.idioms?.length > 0 && (
+                <div className="space-y-1 text-sm text-muted-foreground">
+                  {item.word.idioms.map((idiom) => (
+                    <p key={idiom.phrase}>
+                      <span className="font-medium text-foreground">
+                        {idiom.phrase}
+                      </span>
+                      {" · "}
+                      {idiom.meaning}
+                    </p>
+                  ))}
+                </div>
+              )}
               {item.word.source && (
                 <p className="text-sm text-muted-foreground">출처: {item.word.source}</p>
               )}

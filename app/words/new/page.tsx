@@ -15,7 +15,7 @@ import {
   meaningPos,
   meaningTextOnly,
 } from "@/lib/pos";
-import type { SourceRow } from "@/lib/supabase";
+import type { SourceRow, WordIdiom } from "@/lib/supabase";
 
 export default function NewWordPage() {
   const { user } = useAuth();
@@ -29,6 +29,9 @@ export default function NewWordPage() {
   const [meanings, setMeanings] = useState<string[]>([]);
   const [source, setSource] = useState("");
   const [partOfSpeech, setPartOfSpeech] = useState("");
+  const [idiomPhrase, setIdiomPhrase] = useState("");
+  const [idiomMeaning, setIdiomMeaning] = useState("");
+  const [idioms, setIdioms] = useState<WordIdiom[]>([]);
   const [memo, setMemo] = useState("");
   const [sources, setSources] = useState<SourceRow[]>([]);
   const [busy, setBusy] = useState(false);
@@ -53,9 +56,40 @@ export default function NewWordPage() {
     setMeaningDraft("");
     setMeanings([]);
     setPartOfSpeech("");
+    setIdiomPhrase("");
+    setIdiomMeaning("");
+    setIdioms([]);
     setMemo("");
     setError("");
     wordRef.current?.focus();
+  };
+
+  const addIdiom = () => {
+    const phrase = idiomPhrase.trim();
+    const meaning = idiomMeaning.trim();
+    if (!phrase || !meaning) return;
+    if (idioms.some((x) => x.phrase.toLowerCase() === phrase.toLowerCase())) {
+      setIdiomPhrase("");
+      setIdiomMeaning("");
+      return;
+    }
+    setIdioms((prev) => [...prev, { phrase, meaning }]);
+    setIdiomPhrase("");
+    setIdiomMeaning("");
+  };
+
+  const collectIdioms = (): WordIdiom[] => {
+    const phrase = idiomPhrase.trim();
+    const meaning = idiomMeaning.trim();
+    const list = [...idioms];
+    if (
+      phrase &&
+      meaning &&
+      !list.some((x) => x.phrase.toLowerCase() === phrase.toLowerCase())
+    ) {
+      list.push({ phrase, meaning });
+    }
+    return list;
   };
 
   const addMeaning = () => {
@@ -112,6 +146,7 @@ export default function NewWordPage() {
           meaningPos(finalMeanings[0] ?? "") || partOfSpeech || undefined,
         phonetic: phonetic || undefined,
         audio_url: audioUrl || undefined,
+        idioms: collectIdioms(),
         memo,
       });
       setMessage(`「${word.trim()}」 저장했어요. 다음 단어를 입력하세요.`);
@@ -238,6 +273,73 @@ export default function NewWordPage() {
                 >
                   {s.name}
                 </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Input
+            id="idiom-phrase"
+            value={idiomPhrase}
+            onChange={(e) => setIdiomPhrase(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addIdiom();
+              }
+            }}
+            placeholder="숙어 (예: hesitate to do)"
+            aria-label="숙어"
+          />
+          <div className="flex gap-2">
+            <Input
+              id="idiom-meaning"
+              value={idiomMeaning}
+              onChange={(e) => setIdiomMeaning(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addIdiom();
+                }
+              }}
+              placeholder="숙어 뜻 (예: ~하기를 주저하다)"
+              aria-label="숙어 뜻"
+              className="min-w-0 flex-1"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0 px-3"
+              onClick={addIdiom}
+              aria-label="숙어 추가"
+            >
+              <Plus className="h-4 w-4" />
+              추가
+            </Button>
+          </div>
+          {idioms.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {idioms.map((item) => (
+                <span
+                  key={item.phrase}
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs"
+                >
+                  <span className="font-medium">{item.phrase}</span>
+                  <span className="text-muted-foreground">· {item.meaning}</span>
+                  <button
+                    type="button"
+                    aria-label={`${item.phrase} 삭제`}
+                    className="rounded-full p-0.5 touch-manipulation hover:bg-muted"
+                    onClick={() =>
+                      setIdioms((prev) =>
+                        prev.filter((x) => x.phrase !== item.phrase)
+                      )
+                    }
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
               ))}
             </div>
           )}

@@ -100,11 +100,10 @@ export function parseLearnersResponse(
   if (all.length === 0) return null;
 
   const q = queryWord?.toLowerCase();
-  const entries =
-    q != null
-      ? all.filter((e) => entryHeadword(e) === q)
-      : all;
-  const matched = entries.length > 0 ? entries : [all[0]];
+  const matched =
+    q != null ? all.filter((e) => entryHeadword(e) === q) : all;
+  // No fuzzy fallback — headword must match the query exactly.
+  if (matched.length === 0) return null;
 
   const first = matched[0];
   const word =
@@ -112,6 +111,7 @@ export function parseLearnersResponse(
     first.hwi?.hw?.replace(/\*/g, "") ||
     "";
   if (!word) return null;
+  if (q != null && word.toLowerCase() !== q) return null;
 
   const pr = first.hwi?.prs?.[0];
   const phonetic = pr?.ipa
@@ -161,12 +161,14 @@ export function parseLearnersResponse(
   };
 }
 
+export type DictionaryLookupResult =
+  | { ok: true; exact: true; entry: DictionaryEntry }
+  | { ok: true; exact: false; suggested?: string }
+  | { ok: false; message: string };
+
 export async function fetchDictionaryEntry(
   word: string
-): Promise<
-  | { ok: true; entry: DictionaryEntry }
-  | { ok: false; message: string }
-> {
+): Promise<DictionaryLookupResult> {
   const trimmed = word.trim();
   if (!trimmed) return { ok: false, message: "단어가 비어 있어요." };
 
@@ -176,16 +178,43 @@ export async function fetchDictionaryEntry(
     );
     const data = (await res.json()) as {
       entry?: DictionaryEntry;
+      exact?: boolean;
+      suggested?: string;
       message?: string;
     };
-    if (!res.ok || !data.entry) {
+    if (!res.ok) {
       return {
         ok: false,
         message: data.message ?? "사전에서 찾을 수 없어요.",
       };
     }
-    return { ok: true, entry: data.entry };
+    if (data.exact === false) {
+      return { ok: true, exact: false, suggested: data.suggested };
+    }
+    if (!data.entry) {
+      return {
+        ok: false,
+        message: data.message ?? "사전에서 찾을 수 없어요.",
+      };
+    }
+    return { ok: true, exact: true, entry: data.entry };
   } catch {
     return { ok: false, message: "사전을 불러오지 못했어요." };
   }
+}
+
+/** First headword in a MW payload (may not match the query). */
+export function peekLearnersHeadword(data: unknown): string | null {
+  if (!Array.isArray(data) || data.length === 0) return null;
+  if (typeof data[0] === "string") return null;
+  const first = data.find(
+    (e): e is MwEntry =>
+      typeof e === "object" && e !== null && ("meta" in e || "hwi" in e)
+  );
+  if (!first) return null;
+  const word =
+    first.meta?.id?.split(":")[0] ||
+    first.hwi?.hw?.replace(/\*/g, "") ||
+    "";
+  return word || null;
 }
