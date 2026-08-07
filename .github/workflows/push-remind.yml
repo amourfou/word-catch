@@ -1,0 +1,31 @@
+# Hourly due-reminders for WordCatch (Vercel Hobby only allows 1 daily cron).
+# Requires repo secret CRON_SECRET (same value as Vercel CRON_SECRET).
+name: Push review reminders
+
+on:
+  schedule:
+    # Every hour at :05 UTC — filters by each user's KST remind hour
+    - cron: "5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call push send API
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          PUSH_URL: ${{ vars.WORDCATCH_PUSH_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret is not set"
+            exit 1
+          fi
+          URL="${PUSH_URL:-https://word-catch-three.vercel.app/api/push/send}"
+          code=$(curl -sS -o /tmp/push-out.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Accept: application/json" \
+            "$URL")
+          echo "HTTP $code ($URL)"
+          cat /tmp/push-out.json || true
+          test "$code" = "200"
