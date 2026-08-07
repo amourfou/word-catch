@@ -7,6 +7,7 @@ import {
   type PushPayload,
   type PushSubscriptionJSON,
 } from "@/lib/push";
+import { isPushSchedulerEnabled } from "@/lib/pushConfig";
 
 export const runtime = "nodejs";
 
@@ -22,11 +23,22 @@ function isAuthorizedCron(req: Request): boolean {
   return false;
 }
 
+function schedulerDisabledResponse() {
+  return NextResponse.json(
+    {
+      ok: false,
+      skipped: true,
+      error:
+        "Push scheduler disabled on this host (PUSH_SCHEDULER_ENABLED is not true). Enable it on the personal long-running server.",
+    },
+    { status: 503 }
+  );
+}
+
 /**
  * Send free Web Push.
- * - Self test: { userId, title?, body?, subscription? }
- * - Broadcast (cron / all): Authorization: Bearer CRON_SECRET
- * - Due hour (default for cron all): filters by KST hour
+ * - Self test (always): { userId, title?, body?, subscription? }
+ * - Scheduled broadcast: only when PUSH_SCHEDULER_ENABLED=true + CRON_SECRET
  */
 export async function POST(req: Request) {
   try {
@@ -38,7 +50,6 @@ export async function POST(req: Request) {
       body?: string;
       url?: string;
       all?: boolean;
-      /** If true (default when cron), only users whose remind hour matches now */
       dueOnly?: boolean;
       subscription?: PushSubscriptionJSON;
     };
@@ -54,7 +65,9 @@ export async function POST(req: Request) {
       if (!isCron) {
         return NextResponse.json({ error: "unauthorized" }, { status: 401 });
       }
-      // Cron / force-all: by default only due users; pass dueOnly:false for everyone
+      if (!isPushSchedulerEnabled()) {
+        return schedulerDisabledResponse();
+      }
       if (body.dueOnly === false) {
         const result = await sendPushToAll(payload);
         return NextResponse.json({ ok: true, mode: "all", ...result });
@@ -68,6 +81,7 @@ export async function POST(req: Request) {
       });
     }
 
+    // Manual / self-test send — allowed on any host (Vercel or personal)
     if (!body.userId) {
       return NextResponse.json({ error: "userId required" }, { status: 400 });
     }
@@ -99,10 +113,13 @@ export async function POST(req: Request) {
   }
 }
 
-/** Vercel Cron (hourly): send to users whose KST remind hour matches now */
+/** Scheduled tick (personal server cron / external scheduler). */
 export async function GET(req: Request) {
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (!isPushSchedulerEnabled()) {
+    return schedulerDisabledResponse();
   }
 
   try {

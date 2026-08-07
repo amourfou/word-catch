@@ -1,9 +1,14 @@
-import webpush from "web-push";
-import { seoulDateKey, seoulHour } from "@/lib/date";
+import { seoulDateKey, seoulHour, startOfTodaySeoulIso } from "@/lib/date";
 import { DEFAULT_REMIND_HOUR_KST } from "@/lib/pushRemind";
 import { supabase } from "@/lib/supabase";
 
 export { DEFAULT_REMIND_HOUR_KST } from "@/lib/pushRemind";
+
+/** Lazy-load so Edge / instrumentation webpack graphs never bundle native deps. */
+function getWebPush(): typeof import("web-push") {
+  // Dynamic require — web-push is a serverExternal package (Node http/https).
+  return require("web-push");
+}
 
 export type PushSubscriptionJSON = {
   endpoint: string;
@@ -56,13 +61,14 @@ function getVapid() {
 
 export function configureWebPush() {
   const { publicKey, privateKey, subject } = getVapid();
-  webpush.setVapidDetails(subject, publicKey, privateKey);
+  getWebPush().setVapidDetails(subject, publicKey, privateKey);
 }
 
 export function vapidPublicKeyConfigured(): boolean {
   return !!trimEnv(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY);
 }
 
+/** Save push subscription owned by a user (+ their preferred KST hour). */
 export async function savePushSubscription(
   userId: string,
   subscription: PushSubscriptionJSON,
@@ -179,6 +185,75 @@ export async function listAllSubscriptions() {
   return (data ?? []) as PushSubRow[];
 }
 
+export type PushScheduleLine = {
+  hour: number;
+  deviceCount: number;
+  userIds: string[];
+  names: string[];
+};
+
+/** Snapshot of registered remind hours (for personal-server startup logs). */
+export async function getPushScheduleSummary(): Promise<{
+  lines: PushScheduleLine[];
+  totalDevices: number;
+  error?: string;
+}> {
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select("user_id, remind_hour_kst, endpoint");
+
+  if (error) {
+    console.error("getPushScheduleSummary", error);
+    return { lines: [], totalDevices: 0, error: error.message };
+  }
+
+  const rows = data ?? [];
+  const byHour = new Map<number, { endpoints: Set<string>; userIds: Set<string> }>();
+
+  for (const r of rows) {
+    const hour = clampHour(r.remind_hour_kst ?? DEFAULT_REMIND_HOUR_KST);
+    const bucket = byHour.get(hour) ?? {
+      endpoints: new Set<string>(),
+      userIds: new Set<string>(),
+    };
+    if (r.endpoint) bucket.endpoints.add(r.endpoint as string);
+    if (r.user_id) bucket.userIds.add(r.user_id as string);
+    byHour.set(hour, bucket);
+  }
+
+  const allUserIds = Array.from(
+    new Set(rows.map((r) => r.user_id as string | null).filter((id): id is string => !!id))
+  );
+  const nameMap = new Map<string, string>();
+  if (allUserIds.length > 0) {
+    const { data: users, error: userErr } = await supabase
+      .from("users")
+      .select("id, name")
+      .in("id", allUserIds);
+    if (userErr) {
+      console.error("getPushScheduleSummary users", userErr);
+    } else {
+      for (const u of users ?? []) {
+        nameMap.set(u.id as string, (u.name as string) || "사용자");
+      }
+    }
+  }
+
+  const lines: PushScheduleLine[] = Array.from(byHour.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([hour, bucket]) => {
+      const userIds = Array.from(bucket.userIds);
+      return {
+        hour,
+        deviceCount: bucket.endpoints.size,
+        userIds,
+        names: userIds.map((id) => nameMap.get(id) || id.slice(0, 8)),
+      };
+    });
+
+  return { lines, totalDevices: rows.length };
+}
+
 /** Subs due for this KST hour and not yet notified today. */
 export async function listDueSubscriptions(hourKst?: number) {
   const hour = hourKst ?? seoulHour();
@@ -208,6 +283,28 @@ async function markNotified(endpoints: string[], dateKey: string) {
   if (error) console.error("markNotified", error);
 }
 
+/** Users who already have at least one review log since KST midnight. */
+export async function userIdsWhoReviewedToday(
+  userIds: string[]
+): Promise<Set<string>> {
+  const unique = Array.from(new Set(userIds.filter(Boolean)));
+  if (unique.length === 0) return new Set();
+
+  const since = startOfTodaySeoulIso();
+  const { data, error } = await supabase
+    .from("wordcatch_review_logs")
+    .select("user_id")
+    .in("user_id", unique)
+    .gte("reviewed_at", since);
+
+  if (error) {
+    console.error("userIdsWhoReviewedToday", error);
+    return new Set();
+  }
+
+  return new Set((data ?? []).map((r) => r.user_id as string));
+}
+
 export async function sendPushToSubscription(
   sub: { endpoint: string; p256dh: string; auth: string },
   payload: PushPayload
@@ -222,7 +319,7 @@ export async function sendPushToSubscription(
   }
 
   try {
-    await webpush.sendNotification(
+    await getWebPush().sendNotification(
       {
         endpoint: sub.endpoint,
         keys: { p256dh: sub.p256dh, auth: sub.auth },
@@ -315,10 +412,16 @@ export async function sendPushToAll(
   return { sent, failed, total: subs.length };
 }
 
-/** Hourly cron: only users who chose this KST hour, once per day. */
+/**
+ * Scheduler tick (personal server, hourly):
+ * - only rows with remind_hour_kst === current KST hour
+ * - skip users who already reviewed today
+ * - once per day per subscription (last_notified_on)
+ */
 export async function sendDueReminders(payload?: Partial<PushPayload>): Promise<{
   sent: number;
   failed: number;
+  skippedReviewed: number;
   total: number;
   hour: number;
   today: string;
@@ -326,12 +429,32 @@ export async function sendDueReminders(payload?: Partial<PushPayload>): Promise<
 }> {
   const { rows, hour, today, error } = await listDueSubscriptions();
   if (error) {
-    return { sent: 0, failed: 0, total: 0, hour, today, error };
+    return {
+      sent: 0,
+      failed: 0,
+      skippedReviewed: 0,
+      total: 0,
+      hour,
+      today,
+      error,
+    };
   }
+
+  const reviewed = await userIdsWhoReviewedToday(
+    rows.map((r) => r.user_id).filter((id): id is string => !!id)
+  );
+
+  const due = rows.filter((r) => !r.user_id || !reviewed.has(r.user_id));
+  const skippedReviewed = rows.length - due.length;
+
+  const skipEndpoints = rows
+    .filter((r) => r.user_id && reviewed.has(r.user_id))
+    .map((r) => r.endpoint);
+  await markNotified(skipEndpoints, today);
 
   const full: PushPayload = {
     title: payload?.title || "WordCatch",
-    body: payload?.body || "복습 시간이에요! 오늘도 단어를 잡아볼까요?",
+    body: payload?.body || "아직 오늘 복습이 없어요. 잠깐만 해볼까요?",
     url: payload?.url || "/review",
     tag: payload?.tag || "wordcatch-daily",
   };
@@ -340,7 +463,7 @@ export async function sendDueReminders(payload?: Partial<PushPayload>): Promise<
   let failed = 0;
   const okEndpoints: string[] = [];
 
-  for (const sub of rows) {
+  for (const sub of due) {
     const r = await sendPushToSubscription(sub, full);
     if (r.status === "ok") {
       sent += 1;
@@ -351,5 +474,12 @@ export async function sendDueReminders(payload?: Partial<PushPayload>): Promise<
   }
 
   await markNotified(okEndpoints, today);
-  return { sent, failed, total: rows.length, hour, today };
+  return {
+    sent,
+    failed,
+    skippedReviewed,
+    total: rows.length,
+    hour,
+    today,
+  };
 }

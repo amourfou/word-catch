@@ -32,10 +32,16 @@ VAPID_PRIVATE_KEY=
 VAPID_SUBJECT=mailto:you@example.com
 PUSH_CRON_SECRET=
 CRON_SECRET=
+
+# 예약 발송 역할 (개인 서버만 true)
+PUSH_SCHEDULER_ENABLED=false
 ```
 
 - **Project URL / anon key**: Settings → API
-- **VAPID / CRON**: Vercel 프로젝트 env에도 동일하게 등록. 배포 시 `vercel.json` cron이 매일 10:00 UTC(KST 19:00)에 `/api/push/send` 호출.
+- **VAPID**: 앱(Vercel)과 발송 서버에 동일 키 등록
+- **스케줄 발송**: `PUSH_SCHEDULER_ENABLED=true` 인 호스트만 **프로세스 안 타이머**로 매시 발송
+  - Vercel(앱 UI·구독 저장): `false` 또는 미설정
+  - 개인 서버: `true` 후 `pnpm build && pnpm start` (crontab 불필요)
 
 ## 3. 패키지 설치
 

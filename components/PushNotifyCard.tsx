@@ -154,7 +154,9 @@ export function PushNotifyCard() {
       setRemindHour(hour);
       saveLocalHour(user.id, hour);
       setStatus("on");
-      setMessage(`매일 ${formatHourKst(hour)}에 복습 알림을 보내 드릴게요.`);
+      setMessage(
+        `매일 ${formatHourKst(hour)} · 오늘 아직 복습 안 했을 때만 알려 드릴게요.`
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : "알림을 켤 수 없어요.";
       setMessage(msg);
@@ -228,10 +230,13 @@ export function PushNotifyCard() {
                 <span className="font-medium text-primary">
                   {formatHourKst(remindHour)}
                 </span>
-                <span> · 한국 시간 기준</span>
+                <span> · 오늘 복습 안 했을 때만 · KST</span>
               </>
             ) : (
-              <>시간을 고른 뒤 알림을 켜면, 매일 그 시간에 리마인드를 받아요.</>
+              <>
+                계정마다 시간을 따로 고를 수 있어요. 그날 아직 복습하지 않았을 때만
+                리마인드를 받아요.
+              </>
             )}
           </p>
 

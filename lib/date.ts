@@ -42,6 +42,18 @@ export function seoulHour(date = new Date()): number {
   return Math.min(23, Math.max(0, n));
 }
 
+/** Minute 0–59 in KST */
+export function seoulMinute(date = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: SEOUL,
+    minute: "numeric",
+  }).formatToParts(date);
+  const raw = parts.find((p) => p.type === "minute")?.value ?? "0";
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(59, Math.max(0, n));
+}
+
 /** e.g. 19 → "오후 7시" */
 export function formatHourKst(hour: number): string {
   const h = ((Math.floor(hour) % 24) + 24) % 24;

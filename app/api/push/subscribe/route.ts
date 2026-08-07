@@ -10,7 +10,7 @@ import {
 
 export const runtime = "nodejs";
 
-/** Save browser push subscription for a user (free Web Push). */
+/** Save browser push subscription for a user. */
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
