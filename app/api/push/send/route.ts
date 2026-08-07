@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { formatHourKst } from "@/lib/date";
 import {
+  sendDueReminders,
   sendPushToAll,
   sendPushToUser,
   type PushPayload,
@@ -8,20 +10,27 @@ import {
 
 export const runtime = "nodejs";
 
+function isAuthorizedCron(req: Request): boolean {
+  const auth = req.headers.get("authorization") || "";
+  const cronSecret =
+    process.env.CRON_SECRET || process.env.PUSH_CRON_SECRET || "";
+  if (!cronSecret) return false;
+  if (auth === `Bearer ${cronSecret}`) return true;
+  if (req.headers.get("x-cron-secret") === cronSecret) return true;
+  const url = new URL(req.url);
+  if (url.searchParams.get("secret") === cronSecret) return true;
+  return false;
+}
+
 /**
  * Send free Web Push.
  * - Self test: { userId, title?, body?, subscription? }
- * - Broadcast (cron): Authorization: Bearer CRON_SECRET
+ * - Broadcast (cron / all): Authorization: Bearer CRON_SECRET
+ * - Due hour (default for cron all): filters by KST hour
  */
 export async function POST(req: Request) {
   try {
-    const auth = req.headers.get("authorization") || "";
-    const cronSecret =
-      process.env.CRON_SECRET || process.env.PUSH_CRON_SECRET || "";
-    const isCron =
-      !!cronSecret &&
-      (auth === `Bearer ${cronSecret}` ||
-        req.headers.get("x-cron-secret") === cronSecret);
+    const isCron = isAuthorizedCron(req);
 
     const body = (await req.json().catch(() => ({}))) as {
       userId?: string;
@@ -29,7 +38,8 @@ export async function POST(req: Request) {
       body?: string;
       url?: string;
       all?: boolean;
-      /** Live browser subscription — used for test even if DB empty */
+      /** If true (default when cron), only users whose remind hour matches now */
+      dueOnly?: boolean;
       subscription?: PushSubscriptionJSON;
     };
 
@@ -44,8 +54,18 @@ export async function POST(req: Request) {
       if (!isCron) {
         return NextResponse.json({ error: "unauthorized" }, { status: 401 });
       }
-      const result = await sendPushToAll(payload);
-      return NextResponse.json({ ok: true, ...result });
+      // Cron / force-all: by default only due users; pass dueOnly:false for everyone
+      if (body.dueOnly === false) {
+        const result = await sendPushToAll(payload);
+        return NextResponse.json({ ok: true, mode: "all", ...result });
+      }
+      const result = await sendDueReminders(payload);
+      return NextResponse.json({
+        ok: true,
+        mode: "due",
+        schedule: `hourly filter KST ${formatHourKst(result.hour)}`,
+        ...result,
+      });
     }
 
     if (!body.userId) {
@@ -79,29 +99,22 @@ export async function POST(req: Request) {
   }
 }
 
-/** Vercel Cron can hit GET with Authorization header */
+/** Vercel Cron (hourly): send to users whose KST remind hour matches now */
 export async function GET(req: Request) {
-  const auth = req.headers.get("authorization") || "";
-  const cronSecret =
-    process.env.CRON_SECRET || process.env.PUSH_CRON_SECRET || "";
-  if (!cronSecret || auth !== `Bearer ${cronSecret}`) {
-    const url = new URL(req.url);
-    if (!cronSecret || url.searchParams.get("secret") !== cronSecret) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
+  if (!isAuthorizedCron(req)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   try {
-    // Cron: 10:00 UTC = 19:00 KST (매일 저녁 7시)
-    const result = await sendPushToAll({
+    const result = await sendDueReminders({
       title: "WordCatch",
-      body: "저녁 복습 시간이에요! 오늘도 단어를 잡아볼까요?",
+      body: "복습 시간이에요! 오늘도 단어를 잡아볼까요?",
       url: "/review",
       tag: "wordcatch-daily",
     });
     return NextResponse.json({
       ok: true,
-      schedule: "daily 19:00 KST",
+      schedule: `hourly · ${formatHourKst(result.hour)} KST`,
       ...result,
     });
   } catch (e) {

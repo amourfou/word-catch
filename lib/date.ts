@@ -27,6 +27,30 @@ export function seoulDateKey(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+/** Hour 0–23 in KST */
+export function seoulHour(date = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: SEOUL,
+    hour: "numeric",
+    hour12: false,
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const raw = parts.find((p) => p.type === "hour")?.value ?? "0";
+  const n = Number.parseInt(raw, 10);
+  // Some engines emit 24 for midnight
+  if (!Number.isFinite(n) || n === 24) return 0;
+  return Math.min(23, Math.max(0, n));
+}
+
+/** e.g. 19 → "오후 7시" */
+export function formatHourKst(hour: number): string {
+  const h = ((Math.floor(hour) % 24) + 24) % 24;
+  if (h === 0) return "자정 0시";
+  if (h === 12) return "정오 12시";
+  if (h < 12) return `오전 ${h}시`;
+  return `오후 ${h - 12}시`;
+}
+
 /** Parse KST wall-clock into a UTC Instant (ISO string for timestamptz compare). */
 function kstWallToUtcIso(
   year: string | number,

@@ -16,6 +16,7 @@ ShortJapan / HaanRiver / nextLotto와 **동일한 Supabase 프로젝트**를 사
 3. `supabase-migration-dictionary.sql` → 공유 사전 캐시 + 사용자별 단어 중복 방지
 4. `supabase-migration-idioms.sql` → 숙어(`idioms` JSONB: phrase + meaning)
 5. `supabase-migration-push.sql` → Web Push 구독 테이블 (`wordcatch_push_subscriptions`)
+6. `supabase-migration-push-remind-hour.sql` → 복습 알림 시각(KST)·일일 중복 방지 컬럼
 
 ## 2. 환경 변수
 

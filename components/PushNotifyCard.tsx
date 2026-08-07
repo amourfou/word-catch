@@ -10,19 +10,45 @@ import {
   subscriptionToJSON,
   unsubscribePush,
 } from "@/lib/pushClient";
+import { DEFAULT_REMIND_HOUR_KST } from "@/lib/pushRemind";
+import { formatHourKst } from "@/lib/date";
 import { cn } from "@/lib/utils";
 
 type Status = "loading" | "unsupported" | "off" | "on" | "denied";
 
-/** Free tier: one daily cron — 19:00 KST (= 10:00 UTC). */
-export const REMIND_LABEL = "매일 저녁 7시";
-export const REMIND_HINT = "한국 시간 기준 · 복습 리마인드";
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => h);
+
+function hourStorageKey(userId: string) {
+  return `wordcatch:remindHour:${userId}`;
+}
+
+function loadLocalHour(userId: string | undefined): number {
+  if (!userId || typeof window === "undefined") return DEFAULT_REMIND_HOUR_KST;
+  try {
+    const raw = localStorage.getItem(hourStorageKey(userId));
+    if (raw == null) return DEFAULT_REMIND_HOUR_KST;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0 || n > 23) return DEFAULT_REMIND_HOUR_KST;
+    return Math.floor(n);
+  } catch {
+    return DEFAULT_REMIND_HOUR_KST;
+  }
+}
+
+function saveLocalHour(userId: string, hour: number) {
+  try {
+    localStorage.setItem(hourStorageKey(userId), String(hour));
+  } catch {
+    /* ignore */
+  }
+}
 
 export function PushNotifyCard() {
   const { user } = useAuth();
   const [status, setStatus] = useState<Status>("loading");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [remindHour, setRemindHour] = useState(DEFAULT_REMIND_HOUR_KST);
 
   const refresh = useCallback(async () => {
     if (!isPushSupported()) {
@@ -45,6 +71,57 @@ export function PushNotifyCard() {
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    if (!user) {
+      setRemindHour(DEFAULT_REMIND_HOUR_KST);
+      return;
+    }
+    setRemindHour(loadLocalHour(user.id));
+    void (async () => {
+      try {
+        const res = await fetch(`/api/push/subscribe?userId=${encodeURIComponent(user.id)}`);
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          remindHourKst?: number;
+          hasSubscription?: boolean;
+        };
+        if (typeof data.remindHourKst === "number") {
+          setRemindHour(data.remindHourKst);
+          saveLocalHour(user.id, data.remindHourKst);
+        }
+      } catch {
+        /* keep local */
+      }
+    })();
+  }, [user]);
+
+  const onHourChange = async (next: number) => {
+    setRemindHour(next);
+    if (user) saveLocalHour(user.id, next);
+    setMessage(null);
+
+    if (status !== "on" || !user) return;
+
+    setBusy(true);
+    try {
+      const res = await fetch("/api/push/subscribe", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, remindHourKst: next }),
+      });
+      const data = (await res.json()) as { error?: string; remindHourKst?: number };
+      if (!res.ok) throw new Error(data.error || "시간을 저장하지 못했어요.");
+      const hour = data.remindHourKst ?? next;
+      setRemindHour(hour);
+      saveLocalHour(user.id, hour);
+      setMessage(`알림 시간을 ${formatHourKst(hour)}로 바꿨어요.`);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "시간 저장에 실패했어요.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const enable = async () => {
     if (!user) {
       setMessage("로그인 후 알림을 켤 수 있어요.");
@@ -61,9 +138,10 @@ export function PushNotifyCard() {
         body: JSON.stringify({
           userId: user.id,
           subscription: payload,
+          remindHourKst: remindHour,
         }),
       });
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as { error?: string; remindHourKst?: number };
       if (!res.ok) {
         try {
           await sub.unsubscribe();
@@ -72,8 +150,11 @@ export function PushNotifyCard() {
         }
         throw new Error(data.error || "서버에 구독을 저장하지 못했어요.");
       }
+      const hour = data.remindHourKst ?? remindHour;
+      setRemindHour(hour);
+      saveLocalHour(user.id, hour);
       setStatus("on");
-      setMessage(`${REMIND_LABEL}에 복습 알림을 보내 드릴게요.`);
+      setMessage(`매일 ${formatHourKst(hour)}에 복습 알림을 보내 드릴게요.`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "알림을 켤 수 없어요.";
       setMessage(msg);
@@ -143,15 +224,35 @@ export function PushNotifyCard() {
           <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
             {status === "on" ? (
               <>
-                <span className="font-medium text-primary">{REMIND_LABEL}</span>
-                <span> · {REMIND_HINT}</span>
+                매일{" "}
+                <span className="font-medium text-primary">
+                  {formatHourKst(remindHour)}
+                </span>
+                <span> · 한국 시간 기준</span>
               </>
             ) : (
-              <>홈 화면에 설치한 뒤 알림을 켜면, {REMIND_LABEL}에 리마인드를 받아요.</>
+              <>시간을 고른 뒤 알림을 켜면, 매일 그 시간에 리마인드를 받아요.</>
             )}
           </p>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
+            <label className="sr-only" htmlFor="remind-hour">
+              복습 알림 시간
+            </label>
+            <select
+              id="remind-hour"
+              value={remindHour}
+              disabled={busy}
+              onChange={(e) => void onHourChange(Number(e.target.value))}
+              className="h-9 rounded-xl border border-border bg-background px-2.5 pr-7 text-xs font-semibold touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            >
+              {HOUR_OPTIONS.map((h) => (
+                <option key={h} value={h}>
+                  {formatHourKst(h)}
+                </option>
+              ))}
+            </select>
+
             {status === "off" ? (
               <button
                 type="button"
