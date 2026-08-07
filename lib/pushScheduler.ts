@@ -20,22 +20,29 @@ async function pushLib() {
   return import("@/lib/push");
 }
 
-async function logRegisteredSchedules(): Promise<void> {
-  const { getPushScheduleSummary } = await pushLib();
-  const { lines, totalDevices, error } = await getPushScheduleSummary();
+async function logScheduleSnapshot(
+  label: string,
+  options?: { hourOnly?: number }
+): Promise<void> {
+  const { getPushScheduleSummary, PUSH_APP } = await pushLib();
+  const { lines, totalDevices, error, app } = await getPushScheduleSummary(options);
   if (error) {
-    console.warn("[push-scheduler] could not load schedules:", error);
+    console.warn(`[push-scheduler] ${label} DB error:`, error);
     return;
   }
   if (lines.length === 0) {
     console.log(
-      "[push-scheduler] registered schedules: (none — no push subscriptions yet)"
+      `[push-scheduler] ${label} app=${app || PUSH_APP} devices=0` +
+        (options?.hourOnly !== undefined
+          ? ` hour=${formatHourKst(options.hourOnly)}`
+          : "") +
+        " (no matching rows)"
     );
     return;
   }
 
   console.log(
-    `[push-scheduler] registered schedules: ${lines.length} hour slot(s), ${totalDevices} device(s)`
+    `[push-scheduler] ${label} app=${app || PUSH_APP} devices=${totalDevices}`
   );
   for (const line of lines) {
     const who =
@@ -44,9 +51,6 @@ async function logRegisteredSchedules(): Promise<void> {
       `[push-scheduler]   · ${formatHourKst(line.hour).padEnd(8)}  devices=${line.deviceCount}  users=${who}`
     );
   }
-  console.log(
-    `[push-scheduler] next fire window: each KST hour at min 0–${RUN_UNTIL_MINUTE} (now ${formatHourKst(seoulHour())} KST)`
-  );
 }
 
 async function tick(): Promise<void> {
@@ -55,11 +59,18 @@ async function tick(): Promise<void> {
   const minute = seoulMinute();
   if (minute > RUN_UNTIL_MINUTE) return;
 
-  const key = `${seoulDateKey()}-${seoulHour()}`;
+  const hour = seoulHour();
+  const key = `${seoulDateKey()}-${hour}`;
   if (g().__wordcatchPushSchedulerLastKey === key) return;
   g().__wordcatchPushSchedulerLastKey = key;
 
   try {
+    console.log(
+      `[push-scheduler] === fire window ${key} (${formatHourKst(hour)} KST, min ${minute}) ===`
+    );
+    // Fresh DB read + log right before send
+    await logScheduleSnapshot("pre-send DB", { hourOnly: hour });
+
     const { sendDueReminders } = await pushLib();
     const result = await sendDueReminders({
       title: "WordCatch",
@@ -67,7 +78,7 @@ async function tick(): Promise<void> {
       url: "/review",
       tag: "wordcatch-daily",
     });
-    console.log("[push-scheduler]", {
+    console.log("[push-scheduler] send result", {
       key,
       sent: result.sent,
       failed: result.failed,
@@ -99,7 +110,7 @@ export function startPushScheduler(): void {
     "[push-scheduler] started — checks every 60s, fires once per KST hour (min 0–5)"
   );
 
-  void logRegisteredSchedules();
+  void logScheduleSnapshot("startup all schedules");
 
   void tick();
   g().__wordcatchPushSchedulerTimer = setInterval(() => {

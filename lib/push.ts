@@ -6,7 +6,6 @@ export { DEFAULT_REMIND_HOUR_KST } from "@/lib/pushRemind";
 
 /** Lazy-load so Edge / instrumentation webpack graphs never bundle native deps. */
 function getWebPush(): typeof import("web-push") {
-  // Dynamic require — web-push is a serverExternal package (Node http/https).
   return require("web-push");
 }
 
@@ -32,9 +31,12 @@ export type PushSubRow = {
   user_id?: string;
   remind_hour_kst?: number;
   last_notified_on?: string | null;
+  app?: string;
 };
 
-const TABLE = "wordcatch_push_subscriptions";
+/** Shared table for all apps; always filter by APP. */
+const TABLE = "push_subscriptions";
+export const PUSH_APP = "wordcatch";
 
 function trimEnv(v: string | undefined): string {
   if (!v) return "";
@@ -68,6 +70,10 @@ export function vapidPublicKeyConfigured(): boolean {
   return !!trimEnv(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY);
 }
 
+function tableMissingMessage(): string {
+  return "DB 테이블이 없어요. Supabase에서 supabase-migration-push-subscriptions-unified.sql 을 실행해 주세요.";
+}
+
 /** Save push subscription owned by a user (+ their preferred KST hour). */
 export async function savePushSubscription(
   userId: string,
@@ -80,6 +86,7 @@ export async function savePushSubscription(
 
   const hour = clampHour(remindHourKst);
   const row = {
+    app: PUSH_APP,
     user_id: userId,
     endpoint: subscription.endpoint,
     p256dh: subscription.keys.p256dh,
@@ -88,24 +95,15 @@ export async function savePushSubscription(
     updated_at: new Date().toISOString(),
   };
 
-  const { error } = await supabase.from(TABLE).upsert(row, { onConflict: "endpoint" });
+  const { error } = await supabase
+    .from(TABLE)
+    .upsert(row, { onConflict: "app,endpoint" });
 
   if (error) {
     console.error("savePushSubscription", error);
     const msg = error.message || String(error);
     if (msg.includes("does not exist") || error.code === "42P01") {
-      return {
-        ok: false,
-        error:
-          "DB 테이블이 없어요. Supabase에 wordcatch_push_subscriptions 테이블을 만들어 주세요.",
-      };
-    }
-    if (msg.includes("remind_hour_kst") || msg.includes("column")) {
-      return {
-        ok: false,
-        error:
-          "DB 컬럼이 없어요. Supabase에서 supabase-migration-push-remind-hour.sql 을 실행해 주세요.",
-      };
+      return { ok: false, error: tableMissingMessage() };
     }
     return { ok: false, error: `구독 저장 실패: ${msg}` };
   }
@@ -121,6 +119,7 @@ export async function updateRemindHourForUser(
   const { data, error } = await supabase
     .from(TABLE)
     .update({ remind_hour_kst: hour, updated_at: new Date().toISOString() })
+    .eq("app", PUSH_APP)
     .eq("user_id", userId)
     .select("endpoint");
 
@@ -140,6 +139,7 @@ export async function getRemindHourForUser(
   const { data, error } = await supabase
     .from(TABLE)
     .select("remind_hour_kst")
+    .eq("app", PUSH_APP)
     .eq("user_id", userId)
     .limit(1)
     .maybeSingle();
@@ -154,7 +154,11 @@ export async function getRemindHourForUser(
 }
 
 export async function removePushSubscription(endpoint: string): Promise<boolean> {
-  const { error } = await supabase.from(TABLE).delete().eq("endpoint", endpoint);
+  const { error } = await supabase
+    .from(TABLE)
+    .delete()
+    .eq("app", PUSH_APP)
+    .eq("endpoint", endpoint);
   if (error) {
     console.error("removePushSubscription", error);
     return false;
@@ -166,6 +170,7 @@ export async function listSubscriptionsForUser(userId: string) {
   const { data, error } = await supabase
     .from(TABLE)
     .select("endpoint, p256dh, auth, remind_hour_kst")
+    .eq("app", PUSH_APP)
     .eq("user_id", userId);
   if (error) {
     console.error("listSubscriptionsForUser", error);
@@ -177,7 +182,8 @@ export async function listSubscriptionsForUser(userId: string) {
 export async function listAllSubscriptions() {
   const { data, error } = await supabase
     .from(TABLE)
-    .select("endpoint, p256dh, auth, user_id, remind_hour_kst, last_notified_on");
+    .select("endpoint, p256dh, auth, user_id, remind_hour_kst, last_notified_on")
+    .eq("app", PUSH_APP);
   if (error) {
     console.error("listAllSubscriptions", error);
     return [];
@@ -192,19 +198,34 @@ export type PushScheduleLine = {
   names: string[];
 };
 
-/** Snapshot of registered remind hours (for personal-server startup logs). */
-export async function getPushScheduleSummary(): Promise<{
+/** Snapshot of registered remind hours for this app. */
+export async function getPushScheduleSummary(options?: {
+  hourOnly?: number;
+}): Promise<{
   lines: PushScheduleLine[];
   totalDevices: number;
+  app: string;
   error?: string;
 }> {
-  const { data, error } = await supabase
+  let q = supabase
     .from(TABLE)
-    .select("user_id, remind_hour_kst, endpoint");
+    .select("user_id, remind_hour_kst, endpoint")
+    .eq("app", PUSH_APP);
+
+  if (options?.hourOnly !== undefined) {
+    q = q.eq("remind_hour_kst", options.hourOnly);
+  }
+
+  const { data, error } = await q;
 
   if (error) {
     console.error("getPushScheduleSummary", error);
-    return { lines: [], totalDevices: 0, error: error.message };
+    return {
+      lines: [],
+      totalDevices: 0,
+      app: PUSH_APP,
+      error: error.message,
+    };
   }
 
   const rows = data ?? [];
@@ -251,16 +272,17 @@ export async function getPushScheduleSummary(): Promise<{
       };
     });
 
-  return { lines, totalDevices: rows.length };
+  return { lines, totalDevices: rows.length, app: PUSH_APP };
 }
 
-/** Subs due for this KST hour and not yet notified today. */
+/** Subs due for this KST hour and not yet notified today (this app only). */
 export async function listDueSubscriptions(hourKst?: number) {
   const hour = hourKst ?? seoulHour();
   const today = seoulDateKey();
   const { data, error } = await supabase
     .from(TABLE)
     .select("endpoint, p256dh, auth, user_id, remind_hour_kst, last_notified_on")
+    .eq("app", PUSH_APP)
     .eq("remind_hour_kst", hour);
 
   if (error) {
@@ -279,6 +301,7 @@ async function markNotified(endpoints: string[], dateKey: string) {
   const { error } = await supabase
     .from(TABLE)
     .update({ last_notified_on: dateKey, updated_at: new Date().toISOString() })
+    .eq("app", PUSH_APP)
     .in("endpoint", endpoints);
   if (error) console.error("markNotified", error);
 }
@@ -414,9 +437,9 @@ export async function sendPushToAll(
 
 /**
  * Scheduler tick (personal server, hourly):
- * - only rows with remind_hour_kst === current KST hour
+ * - this app only (PUSH_APP)
+ * - remind_hour_kst === current KST hour
  * - skip users who already reviewed today
- * - once per day per subscription (last_notified_on)
  */
 export async function sendDueReminders(payload?: Partial<PushPayload>): Promise<{
   sent: number;

@@ -29,7 +29,10 @@ console.log("vapid priv len", priv?.length);
 console.log("subject", subj);
 
 const sb = createClient(url, key);
-const { data, error } = await sb.from("wordcatch_push_subscriptions").select("*");
+const { data, error } = await sb
+  .from("push_subscriptions")
+  .select("*")
+  .eq("app", "wordcatch");
 console.log("db error", error);
 console.log("subs count", data?.length);
 

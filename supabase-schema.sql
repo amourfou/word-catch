@@ -90,26 +90,28 @@ CREATE POLICY "wc_words_all" ON wordcatch_words FOR ALL USING (true) WITH CHECK 
 CREATE POLICY "wc_logs_all" ON wordcatch_review_logs FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "wc_sources_all" ON wordcatch_sources FOR ALL USING (true) WITH CHECK (true);
 
--- 5. Web Push subscriptions (free VAPID / browser push)
-CREATE TABLE IF NOT EXISTS wordcatch_push_subscriptions (
+-- 5. Web Push (shared with ShortJapan etc.) — see also supabase-migration-push-subscriptions-unified.sql
+CREATE TABLE IF NOT EXISTS push_subscriptions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  app TEXT NOT NULL,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  endpoint TEXT NOT NULL UNIQUE,
+  endpoint TEXT NOT NULL,
   p256dh TEXT NOT NULL,
   auth TEXT NOT NULL,
   remind_hour_kst INTEGER NOT NULL DEFAULT 19
     CHECK (remind_hour_kst >= 0 AND remind_hour_kst <= 23),
   last_notified_on DATE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (app, endpoint)
 );
 
-CREATE INDEX IF NOT EXISTS idx_wc_push_user ON wordcatch_push_subscriptions(user_id);
-CREATE INDEX IF NOT EXISTS idx_wc_push_remind_hour ON wordcatch_push_subscriptions(remind_hour_kst);
+CREATE INDEX IF NOT EXISTS idx_push_subs_app_user ON push_subscriptions(app, user_id);
+CREATE INDEX IF NOT EXISTS idx_push_subs_app_hour ON push_subscriptions(app, remind_hour_kst);
 
-ALTER TABLE wordcatch_push_subscriptions ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "wc_push_all" ON wordcatch_push_subscriptions;
-CREATE POLICY "wc_push_all" ON wordcatch_push_subscriptions FOR ALL USING (true) WITH CHECK (true);
+ALTER TABLE push_subscriptions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "push_subs_all" ON push_subscriptions;
+CREATE POLICY "push_subs_all" ON push_subscriptions FOR ALL USING (true) WITH CHECK (true);
 
 CREATE OR REPLACE FUNCTION update_wc_dictionary_updated_at()
 RETURNS TRIGGER AS $$
