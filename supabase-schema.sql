@@ -90,6 +90,23 @@ CREATE POLICY "wc_words_all" ON wordcatch_words FOR ALL USING (true) WITH CHECK 
 CREATE POLICY "wc_logs_all" ON wordcatch_review_logs FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "wc_sources_all" ON wordcatch_sources FOR ALL USING (true) WITH CHECK (true);
 
+-- 5. Web Push subscriptions (free VAPID / browser push)
+CREATE TABLE IF NOT EXISTS wordcatch_push_subscriptions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wc_push_user ON wordcatch_push_subscriptions(user_id);
+
+ALTER TABLE wordcatch_push_subscriptions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "wc_push_all" ON wordcatch_push_subscriptions;
+CREATE POLICY "wc_push_all" ON wordcatch_push_subscriptions FOR ALL USING (true) WITH CHECK (true);
+
 CREATE OR REPLACE FUNCTION update_wc_dictionary_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN

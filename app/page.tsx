@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BookPlus, Zap } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
+import { PushNotifyCard } from "@/components/PushNotifyCard";
 import { StatusBadge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { getRecentAccuracy, getStatusCounts } from "@/lib/db";
@@ -98,6 +99,8 @@ export default function HomePage() {
           통계 자세히 보기 →
         </Link>
       </section>
+
+      <PushNotifyCard />
 
       <section className="grid gap-3">
         <Link

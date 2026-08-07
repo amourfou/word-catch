@@ -15,6 +15,7 @@ ShortJapan / HaanRiver / nextLotto와 **동일한 Supabase 프로젝트**를 사
 2. `supabase-migration-audio.sql` → `audio_url` 컬럼 + 듣기 복습 방향
 3. `supabase-migration-dictionary.sql` → 공유 사전 캐시 + 사용자별 단어 중복 방지
 4. `supabase-migration-idioms.sql` → 숙어(`idioms` JSONB: phrase + meaning)
+5. `supabase-migration-push.sql` → Web Push 구독 테이블 (`wordcatch_push_subscriptions`)
 
 ## 2. 환경 변수
 
@@ -23,9 +24,17 @@ ShortJapan / HaanRiver / nextLotto와 **동일한 Supabase 프로젝트**를 사
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+
+# Web Push (node scripts/generate-vapid.mjs)
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=mailto:you@example.com
+PUSH_CRON_SECRET=
+CRON_SECRET=
 ```
 
 - **Project URL / anon key**: Settings → API
+- **VAPID / CRON**: Vercel 프로젝트 env에도 동일하게 등록. 배포 시 `vercel.json` cron이 매일 10:00 UTC(KST 19:00)에 `/api/push/send` 호출.
 
 ## 3. 패키지 설치
 
