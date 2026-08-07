@@ -66,9 +66,8 @@ async function tick(): Promise<void> {
 
   try {
     console.log(
-      `[push-scheduler] === fire window ${key} (${formatHourKst(hour)} KST, min ${minute}) ===`
+      `[push-scheduler] === fire window ${key} (${formatHourKst(hour)} KST, min ${minute}) — WordCatch only ===`
     );
-    // Fresh DB read + log right before send
     await logScheduleSnapshot("pre-send DB", { hourOnly: hour });
 
     const { sendDueReminders } = await pushLib();
@@ -93,8 +92,7 @@ async function tick(): Promise<void> {
 
 /**
  * In-process hourly reminder loop for long-running Node (personal server).
- * No-op when PUSH_SCHEDULER_ENABLED is not true (e.g. Vercel).
- * Safe to call multiple times — starts at most once per process.
+ * WordCatch only — other apps run their own backends.
  */
 export function startPushScheduler(): void {
   if (!isPushSchedulerEnabled()) {
@@ -107,7 +105,7 @@ export function startPushScheduler(): void {
   g().__wordcatchPushSchedulerStarted = true;
 
   console.log(
-    "[push-scheduler] started — checks every 60s, fires once per KST hour (min 0–5)"
+    "[push-scheduler] started — WordCatch only, checks every 60s, fires once per KST hour (min 0–5)"
   );
 
   void logScheduleSnapshot("startup all schedules");

@@ -34,7 +34,7 @@ export type PushSubRow = {
   app?: string;
 };
 
-/** Shared table for all apps; always filter by APP. */
+/** Shared table; this process only handles WordCatch rows. */
 const TABLE = "push_subscriptions";
 export const PUSH_APP = "wordcatch";
 
@@ -55,7 +55,7 @@ function getVapid() {
   const subject = trimEnv(process.env.VAPID_SUBJECT) || "mailto:wordcatch@example.com";
   if (!publicKey || !privateKey) {
     throw new Error(
-      "VAPID 키 없음: NEXT_PUBLIC_VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY 를 Vercel에 등록했는지 확인하세요."
+      "VAPID 키 없음: NEXT_PUBLIC_VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY 를 확인하세요."
     );
   }
   return { publicKey, privateKey, subject };
@@ -198,7 +198,7 @@ export type PushScheduleLine = {
   names: string[];
 };
 
-/** Snapshot of registered remind hours for this app. */
+/** Snapshot of WordCatch remind hours (for personal-server logs). */
 export async function getPushScheduleSummary(options?: {
   hourOnly?: number;
 }): Promise<{
@@ -275,7 +275,7 @@ export async function getPushScheduleSummary(options?: {
   return { lines, totalDevices: rows.length, app: PUSH_APP };
 }
 
-/** Subs due for this KST hour and not yet notified today (this app only). */
+/** WordCatch subs due for this KST hour, not yet notified today. */
 export async function listDueSubscriptions(hourKst?: number) {
   const hour = hourKst ?? seoulHour();
   const today = seoulDateKey();
@@ -436,9 +436,8 @@ export async function sendPushToAll(
 }
 
 /**
- * Scheduler tick (personal server, hourly):
- * - this app only (PUSH_APP)
- * - remind_hour_kst === current KST hour
+ * Scheduler tick (personal server, hourly) — WordCatch only.
+ * - app = wordcatch, remind_hour_kst === current KST hour
  * - skip users who already reviewed today
  */
 export async function sendDueReminders(payload?: Partial<PushPayload>): Promise<{
