@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { getAdminCaller, readAdminUserId } from "@/lib/adminAuth";
+import {
+  assertCanManageUser,
+  getAdminCaller,
+  readAdminUserId,
+} from "@/lib/adminAuth";
 import { supabase, type WordStatus } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -19,6 +23,11 @@ export async function GET(req: Request) {
 
   if (!userId) {
     return NextResponse.json({ error: "userId required" }, { status: 400 });
+  }
+
+  const allowed = await assertCanManageUser(gate.caller, userId);
+  if (!allowed.ok) {
+    return NextResponse.json({ error: allowed.error }, { status: allowed.status });
   }
 
   let query = supabase
@@ -73,6 +82,11 @@ export async function PATCH(req: Request) {
     );
   }
 
+  const allowed = await assertCanManageUser(gate.caller, body.userId);
+  if (!allowed.ok) {
+    return NextResponse.json({ error: allowed.error }, { status: allowed.status });
+  }
+
   const patch: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
@@ -112,6 +126,11 @@ export async function DELETE(req: Request) {
       { error: "wordId and userId required" },
       { status: 400 }
     );
+  }
+
+  const allowed = await assertCanManageUser(gate.caller, body.userId);
+  if (!allowed.ok) {
+    return NextResponse.json({ error: allowed.error }, { status: allowed.status });
   }
 
   const { error } = await supabase

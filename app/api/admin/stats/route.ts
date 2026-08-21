@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { getAdminCaller, readAdminUserId } from "@/lib/adminAuth";
+import {
+  assertCanManageUser,
+  getAdminCaller,
+  getManagedUserIds,
+  readAdminUserId,
+} from "@/lib/adminAuth";
 import { seoulDateKey, startOfTodaySeoulIso } from "@/lib/date";
 import { supabase } from "@/lib/supabase";
 
@@ -14,13 +19,52 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const userId = url.searchParams.get("userId")?.trim() || null;
+  const managedIds = await getManagedUserIds(gate.caller);
 
-  const { count: userCount } = await supabase
-    .from("users")
-    .select("id", { count: "exact", head: true });
+  if (userId) {
+    const allowed = await assertCanManageUser(gate.caller, userId);
+    if (!allowed.ok) {
+      return NextResponse.json(
+        { error: allowed.error },
+        { status: allowed.status }
+      );
+    }
+  } else if (managedIds !== null && managedIds.length === 0) {
+    return NextResponse.json({
+      ok: true,
+      summary: {
+        userCount: 0,
+        usersWithWords: 0,
+        activeReviewers7d: 0,
+        todayAdded: 0,
+        words: { unknown: 0, learning: 0, mastered: 0, total: 0 },
+        recentReviews: 0,
+        recentAccuracy: 0,
+      },
+      daily: [],
+      topWrong: [],
+    });
+  }
+
+  // Scope "all users" for non-super = roster only
+  const scopeIds = userId
+    ? [userId]
+    : managedIds === null
+      ? null
+      : managedIds;
+
+  let userCount = 0;
+  if (scopeIds === null) {
+    const { count } = await supabase
+      .from("users")
+      .select("id", { count: "exact", head: true });
+    userCount = count ?? 0;
+  } else {
+    userCount = scopeIds.length;
+  }
 
   let wordsQuery = supabase.from("wordcatch_words").select("status, user_id");
-  if (userId) wordsQuery = wordsQuery.eq("user_id", userId);
+  if (scopeIds) wordsQuery = wordsQuery.in("user_id", scopeIds);
   const { data: words } = await wordsQuery;
 
   const statusCounts = { unknown: 0, learning: 0, mastered: 0, total: 0 };
@@ -37,7 +81,7 @@ export async function GET(req: Request) {
     .from("wordcatch_review_logs")
     .select("is_correct, reviewed_at, user_id")
     .gte("reviewed_at", since);
-  if (userId) logsQuery = logsQuery.eq("user_id", userId);
+  if (scopeIds) logsQuery = logsQuery.in("user_id", scopeIds);
   const { data: logs } = await logsQuery;
 
   let correct = 0;
@@ -60,7 +104,7 @@ export async function GET(req: Request) {
     .gt("wrong_count", 0)
     .order("wrong_count", { ascending: false })
     .limit(10);
-  if (userId) topWrongQuery = topWrongQuery.eq("user_id", userId);
+  if (scopeIds) topWrongQuery = topWrongQuery.in("user_id", scopeIds);
   const { data: topWrong } = await topWrongQuery;
 
   const todayIso = startOfTodaySeoulIso();
@@ -68,13 +112,13 @@ export async function GET(req: Request) {
     .from("wordcatch_words")
     .select("id", { count: "exact", head: true })
     .gte("created_at", todayIso);
-  if (userId) todayAddedQuery = todayAddedQuery.eq("user_id", userId);
+  if (scopeIds) todayAddedQuery = todayAddedQuery.in("user_id", scopeIds);
   const { count: todayAdded } = await todayAddedQuery;
 
   return NextResponse.json({
     ok: true,
     summary: {
-      userCount: userCount ?? 0,
+      userCount,
       usersWithWords: usersWithWords.size,
       activeReviewers7d: activeUsers.size,
       todayAdded: todayAdded ?? 0,

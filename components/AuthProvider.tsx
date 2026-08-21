@@ -59,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         organization: cached.organization,
         high_score: 0,
         is_admin: false,
+        role: "user",
         created_at: "",
         updated_at: "",
       });

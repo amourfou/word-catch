@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { getAdminCaller, readAdminUserId } from "@/lib/adminAuth";
+import {
+  assertCanManageUser,
+  getAdminCaller,
+  getManagedUserIds,
+  readAdminUserId,
+} from "@/lib/adminAuth";
 import { sendPushToUser } from "@/lib/push";
 import { supabase } from "@/lib/supabase";
 
@@ -12,7 +17,17 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: gate.error }, { status: gate.status });
   }
 
-  const { data, error } = await supabase
+  const managedIds = await getManagedUserIds(gate.caller);
+  if (managedIds !== null && managedIds.length === 0) {
+    return NextResponse.json({
+      ok: true,
+      total: 0,
+      byHour: [],
+      subscriptions: [],
+    });
+  }
+
+  let query = supabase
     .from("push_subscriptions")
     .select(
       "id, user_id, endpoint, remind_hour_kst, last_notified_on, updated_at, created_at"
@@ -21,6 +36,11 @@ export async function GET(req: Request) {
     .order("updated_at", { ascending: false })
     .limit(200);
 
+  if (managedIds) {
+    query = query.in("user_id", managedIds);
+  }
+
+  const { data, error } = await query;
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -82,11 +102,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "userId required" }, { status: 400 });
   }
 
+  const allowed = await assertCanManageUser(gate.caller, body.userId);
+  if (!allowed.ok) {
+    return NextResponse.json({ error: allowed.error }, { status: allowed.status });
+  }
+
   const result = await sendPushToUser(body.userId, {
-    title: body.title || "WordCatch (관리자 테스트)",
-    body: body.body || "관리자 테스트 푸시입니다.",
-    url: "/",
-    tag: "wordcatch-admin-test",
+    title: body.title || "WordCatch",
+    body: body.body || "복습할 시간이에요! 테스트 한 번 해볼까요?",
+    url: "/review",
+    tag: "wordcatch-admin-nudge",
   });
 
   if (result.sent === 0) {

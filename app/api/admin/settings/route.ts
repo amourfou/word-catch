@@ -12,6 +12,7 @@ export async function GET(req: Request) {
   if (!gate.ok) {
     return NextResponse.json({ error: gate.error }, { status: gate.status });
   }
+  // Both admin and super_admin can view settings
 
   const { data, error } = await supabase
     .from("wordcatch_app_settings")
@@ -51,6 +52,12 @@ export async function PATCH(req: Request) {
   const gate = await getAdminCaller(adminUserId);
   if (!gate.ok) {
     return NextResponse.json({ error: gate.error }, { status: gate.status });
+  }
+  if (gate.caller.role !== "super_admin") {
+    return NextResponse.json(
+      { error: "시스템 설정 변경은 슈퍼관리자만 가능해요." },
+      { status: 403 }
+    );
   }
   if (!body.settings || typeof body.settings !== "object") {
     return NextResponse.json({ error: "settings required" }, { status: 400 });

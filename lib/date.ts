@@ -122,3 +122,16 @@ export function formatDateKo(iso: string): string {
     day: "numeric",
   }).format(new Date(iso));
 }
+
+export function formatDateTimeKo(iso: string | null | undefined): string {
+  if (!iso) return "기록 없음";
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: SEOUL,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso));
+}

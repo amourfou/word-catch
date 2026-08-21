@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { adminFetch } from "@/lib/adminApi";
-import { formatHourKst } from "@/lib/date";
+import { formatDateTimeKo, formatHourKst } from "@/lib/date";
+import { getUserRole, roleLabel, type UserRole } from "@/lib/roles";
 import { isAdminUser, type WordRow, type WordStatus } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -14,9 +15,13 @@ type AdminUser = {
   id: string;
   name: string;
   organization: string;
+  role: UserRole;
   is_admin: boolean;
   created_at: string;
+  updated_at: string;
   wordCount: number;
+  lastSeenAt: string | null;
+  lastReviewAt: string | null;
 };
 
 const TABS: { id: Tab; label: string }[] = [
@@ -53,7 +58,7 @@ export default function AdminPage() {
           관리
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {user.name} · WordCatch 관리자
+          {user.name} · {roleLabel(getUserRole(user))}
         </p>
       </div>
 
@@ -85,7 +90,11 @@ export default function AdminPage() {
       )}
 
       {tab === "users" && (
-        <UsersPanel adminUserId={user.id} onMessage={setMessage} />
+        <UsersPanel
+          adminUserId={user.id}
+          callerRole={getUserRole(user)}
+          onMessage={setMessage}
+        />
       )}
       {tab === "words" && (
         <WordsPanel adminUserId={user.id} onMessage={setMessage} />
@@ -95,7 +104,11 @@ export default function AdminPage() {
         <PushPanel adminUserId={user.id} onMessage={setMessage} />
       )}
       {tab === "system" && (
-        <SystemPanel adminUserId={user.id} onMessage={setMessage} />
+        <SystemPanel
+          adminUserId={user.id}
+          callerRole={getUserRole(user)}
+          onMessage={setMessage}
+        />
       )}
     </div>
   );
@@ -103,19 +116,36 @@ export default function AdminPage() {
 
 function UsersPanel({
   adminUserId,
+  callerRole,
   onMessage,
 }: {
   adminUserId: string;
+  callerRole: UserRole;
   onMessage: (m: string | null) => void;
 }) {
+  const isSuper = callerRole === "super_admin";
   const [q, setQ] = useState("");
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [allForPromote, setAllForPromote] = useState<AdminUser[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [regName, setRegName] = useState("");
+  const [regOrg, setRegOrg] = useState("");
+  const [detail, setDetail] = useState<{
+    summary: {
+      words: { unknown: number; learning: number; mastered: number; total: number };
+      recentReviews: number;
+      recentAccuracy: number;
+      todayAdded: number;
+      activeReviewers7d: number;
+    };
+    topWrong: { id: string; word: string; wrong_count: number; status: string }[];
+  } | null>(null);
 
   const load = useCallback(async () => {
     setBusy(true);
-    const res = await adminFetch<{ users: AdminUser[] }>(
-      `/api/admin/users?q=${encodeURIComponent(q)}`,
+    const res = await adminFetch<{ users: AdminUser[]; role: UserRole }>(
+      `/api/admin/users?q=${encodeURIComponent(q)}&scope=managed`,
       adminUserId
     );
     setBusy(false);
@@ -126,44 +156,179 @@ function UsersPanel({
     setUsers(res.data.users);
   }, [adminUserId, q, onMessage]);
 
+  const loadPromotePool = useCallback(async () => {
+    if (!isSuper) return;
+    const res = await adminFetch<{ users: AdminUser[] }>(
+      "/api/admin/users?scope=all",
+      adminUserId
+    );
+    if (res.ok) setAllForPromote(res.data.users);
+  }, [adminUserId, isSuper]);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadPromotePool();
+  }, [load, loadPromotePool]);
 
-  const toggleAdmin = async (u: AdminUser) => {
-    const next = !u.is_admin;
-    if (
-      !next &&
-      !confirm(`${u.name} 님의 관리자 권한을 해제할까요?`)
-    ) {
-      return;
-    }
+  const registerMember = async () => {
     setBusy(true);
-    const res = await adminFetch<{ user: AdminUser }>(
-      "/api/admin/users",
-      adminUserId,
-      { method: "PATCH", json: { userId: u.id, is_admin: next } }
-    );
+    const res = await adminFetch<{ message?: string }>("/api/admin/users", adminUserId, {
+      method: "POST",
+      json: { name: regName, organization: regOrg },
+    });
     setBusy(false);
     if (!res.ok) {
       onMessage(res.error);
       return;
     }
-    onMessage(
-      next
-        ? `${u.name} 님을 관리자로 지정했어요.`
-        : `${u.name} 님 관리자 권한을 해제했어요.`
-    );
+    onMessage(res.data.message || `${regName} 님을 등록했어요.`);
+    setRegName("");
+    setRegOrg("");
     void load();
   };
 
+  const setRole = async (userId: string, role: UserRole) => {
+    setBusy(true);
+    const res = await adminFetch("/api/admin/users", adminUserId, {
+      method: "PATCH",
+      json: { userId, role, action: "set_role" },
+    });
+    setBusy(false);
+    if (!res.ok) {
+      onMessage(res.error);
+      return;
+    }
+    onMessage("등급을 변경했어요.");
+    void load();
+    void loadPromotePool();
+  };
+
+  const removeFromRoster = async (u: AdminUser) => {
+    if (!confirm(`${u.name} 님을 관리 목록에서 제거할까요?`)) return;
+    setBusy(true);
+    const res = await adminFetch("/api/admin/users", adminUserId, {
+      method: "PATCH",
+      json: { userId: u.id, action: "remove_from_roster" },
+    });
+    setBusy(false);
+    if (!res.ok) {
+      onMessage(res.error);
+      return;
+    }
+    onMessage(`${u.name} 님을 목록에서 제거했어요.`);
+    if (selectedId === u.id) {
+      setSelectedId(null);
+      setDetail(null);
+    }
+    void load();
+  };
+
+  const openUser = async (u: AdminUser) => {
+    if (selectedId === u.id) {
+      setSelectedId(null);
+      setDetail(null);
+      return;
+    }
+    setSelectedId(u.id);
+    setDetail(null);
+    setBusy(true);
+    const res = await adminFetch<{
+      summary: NonNullable<typeof detail>["summary"];
+      topWrong: NonNullable<typeof detail>["topWrong"];
+    }>(`/api/admin/stats?userId=${encodeURIComponent(u.id)}`, adminUserId);
+    setBusy(false);
+    if (!res.ok) {
+      onMessage(res.error);
+      return;
+    }
+    setDetail({ summary: res.data.summary, topWrong: res.data.topWrong });
+  };
+
+  const promoteCandidates = allForPromote.filter((u) => u.role === "user");
+
   return (
-    <section className="space-y-3">
+    <section className="space-y-4">
+      <div className="rounded-2xl border border-border bg-card p-3 space-y-2">
+        <p className="text-sm font-medium">사용자 등록</p>
+        <p className="text-[11px] text-muted-foreground">
+          새 계정을 만들거나, 같은 이름 유저가 있으면 내 관리 목록에 연결해요.
+        </p>
+        <input
+          value={regName}
+          onChange={(e) => setRegName(e.target.value)}
+          placeholder="이름 (≤10자)"
+          className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm"
+        />
+        <input
+          value={regOrg}
+          onChange={(e) => setRegOrg(e.target.value)}
+          placeholder="소속 (≤15자)"
+          className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm"
+        />
+        <button
+          type="button"
+          disabled={busy || !regName.trim() || !regOrg.trim()}
+          onClick={() => void registerMember()}
+          className="w-full rounded-xl bg-primary py-2.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+        >
+          등록
+        </button>
+      </div>
+
+      {isSuper && (
+        <div className="rounded-2xl border border-border bg-card p-3 space-y-2">
+          <p className="text-sm font-medium">관리자 지정 (슈퍼관리자)</p>
+          <p className="text-[11px] text-muted-foreground">
+            일반 유저를 관리자로 올리거나, 관리자를 유저로 내릴 수 있어요.
+          </p>
+          <ul className="max-h-40 space-y-1 overflow-y-auto text-xs">
+            {allForPromote
+              .filter((u) => u.role !== "super_admin")
+              .map((u) => (
+                <li
+                  key={`promo-${u.id}`}
+                  className="flex items-center justify-between gap-2 rounded-lg bg-muted/50 px-2 py-1.5"
+                >
+                  <span>
+                    {u.name}{" "}
+                    <span className="text-muted-foreground">
+                      ({roleLabel(u.role)})
+                    </span>
+                  </span>
+                  {u.role === "user" ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      className="rounded-lg bg-primary/15 px-2 py-1 font-semibold text-primary"
+                      onClick={() => void setRole(u.id, "admin")}
+                    >
+                      관리자로
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      className="rounded-lg border border-border px-2 py-1 font-semibold"
+                      onClick={() => void setRole(u.id, "user")}
+                    >
+                      유저로
+                    </button>
+                  )}
+                </li>
+              ))}
+            {promoteCandidates.length === 0 &&
+              allForPromote.every((u) => u.role !== "admin") && (
+                <li className="text-muted-foreground">지정할 유저가 없어요.</li>
+              )}
+          </ul>
+        </div>
+      )}
+
       <div className="flex gap-2">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="이름 검색"
+          placeholder="관리 대상 검색"
           className="h-10 flex-1 rounded-xl border border-border bg-background px-3 text-sm"
         />
         <button
@@ -175,37 +340,97 @@ function UsersPanel({
           검색
         </button>
       </div>
+      <p className="text-[11px] text-muted-foreground">
+        {isSuper
+          ? "슈퍼관리자: 전체 유저가 보입니다. 탭하면 통계."
+          : "등록한 사용자만 보입니다. 탭하면 통계."}
+      </p>
       <ul className="space-y-2">
-        {users.map((u) => (
-          <li
-            key={u.id}
-            className="rounded-2xl border border-border bg-card px-3 py-3"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="font-semibold">
-                  {u.name}
-                  {u.is_admin && (
-                    <span className="ml-2 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] text-primary">
-                      관리자
-                    </span>
-                  )}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {u.organization || "소속 없음"} · 단어 {u.wordCount}개
-                </p>
-              </div>
+        {users.map((u) => {
+          const open = selectedId === u.id;
+          return (
+            <li
+              key={u.id}
+              className="overflow-hidden rounded-2xl border border-border bg-card"
+            >
               <button
                 type="button"
-                disabled={busy}
-                onClick={() => void toggleAdmin(u)}
-                className="shrink-0 rounded-lg border border-border px-2 py-1.5 text-[11px] font-semibold"
+                onClick={() => void openUser(u)}
+                className="flex w-full items-start justify-between gap-2 px-3 py-3 text-left touch-manipulation"
               >
-                {u.is_admin ? "권한 해제" : "관리자 지정"}
+                <div className="min-w-0">
+                  <p className="font-semibold">
+                    {u.name}
+                    <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                      {roleLabel(u.role)}
+                    </span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {u.organization || "소속 없음"} · 단어 {u.wordCount}개
+                  </p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    접속 {formatDateTimeKo(u.lastSeenAt)} · 복습{" "}
+                    {formatDateTimeKo(u.lastReviewAt)}
+                  </p>
+                </div>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {open ? "닫기" : "통계"}
+                </span>
               </button>
-            </div>
+              {open && detail && (
+                <div className="border-t border-border px-3 py-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Stat label="단어" value={String(detail.summary.words.total)} />
+                    <Stat
+                      label="최근 정답률"
+                      value={`${detail.summary.recentAccuracy}%`}
+                    />
+                    <Stat label="모름" value={String(detail.summary.words.unknown)} />
+                    <Stat label="외움" value={String(detail.summary.words.mastered)} />
+                    <Stat
+                      label="최근 복습"
+                      value={`${detail.summary.recentReviews}회`}
+                    />
+                    <Stat
+                      label="오늘 추가"
+                      value={String(detail.summary.todayAdded)}
+                    />
+                  </div>
+                  <p className="mt-3 text-xs font-medium">오답 많은 단어</p>
+                  <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
+                    {detail.topWrong.length === 0 && <li>없음</li>}
+                    {detail.topWrong.map((w) => (
+                      <li key={w.id} className="flex justify-between gap-2">
+                        <span className="text-foreground">{w.word}</span>
+                        <span>{w.wrong_count}회</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {!isSuper && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void removeFromRoster(u)}
+                      className="mt-3 w-full rounded-xl border border-destructive/40 py-2 text-xs font-semibold text-destructive"
+                    >
+                      관리 목록에서 제거
+                    </button>
+                  )}
+                </div>
+              )}
+              {open && !detail && busy && (
+                <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
+                  통계 불러오는 중…
+                </p>
+              )}
+            </li>
+          );
+        })}
+        {users.length === 0 && (
+          <li className="text-xs text-muted-foreground">
+            등록된 사용자가 없어요. 위에서 등록해 주세요.
           </li>
-        ))}
+        )}
       </ul>
     </section>
   );
@@ -578,11 +803,14 @@ function PushPanel({
 
 function SystemPanel({
   adminUserId,
+  callerRole,
   onMessage,
 }: {
   adminUserId: string;
+  callerRole: UserRole;
   onMessage: (m: string | null) => void;
 }) {
+  const canEdit = callerRole === "super_admin";
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiLimit, setAiLimit] = useState(20);
   const [notice, setNotice] = useState("");
@@ -636,11 +864,17 @@ function SystemPanel({
 
   return (
     <section className="space-y-4 rounded-2xl border border-border bg-card p-4">
+      {!canEdit && (
+        <p className="text-xs text-muted-foreground">
+          시스템 설정 변경은 슈퍼관리자만 가능해요. (조회만)
+        </p>
+      )}
       <label className="flex items-center justify-between gap-3 text-sm">
         <span>AI 기능 사용</span>
         <input
           type="checkbox"
           checked={aiEnabled}
+          disabled={!canEdit}
           onChange={(e) => setAiEnabled(e.target.checked)}
         />
       </label>
@@ -650,27 +884,31 @@ function SystemPanel({
           type="number"
           min={0}
           value={aiLimit}
+          disabled={!canEdit}
           onChange={(e) => setAiLimit(Number(e.target.value) || 0)}
-          className="mt-1 h-10 w-full rounded-xl border border-border bg-background px-3"
+          className="mt-1 h-10 w-full rounded-xl border border-border bg-background px-3 disabled:opacity-60"
         />
       </label>
       <label className="block text-sm">
         <span className="text-muted-foreground">홈 공지 (한 줄)</span>
         <input
           value={notice}
+          disabled={!canEdit}
           onChange={(e) => setNotice(e.target.value)}
-          className="mt-1 h-10 w-full rounded-xl border border-border bg-background px-3"
+          className="mt-1 h-10 w-full rounded-xl border border-border bg-background px-3 disabled:opacity-60"
           placeholder="비우면 공지 없음"
         />
       </label>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => void save()}
-        className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground disabled:opacity-50"
-      >
-        저장
-      </button>
+      {canEdit && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void save()}
+          className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+        >
+          저장
+        </button>
+      )}
     </section>
   );
 }

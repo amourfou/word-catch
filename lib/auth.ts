@@ -75,7 +75,16 @@ export async function loginByName(name: string): Promise<DbUser | null> {
     .maybeSingle();
 
   if (error || !data) return null;
-  return data as DbUser;
+
+  // Touch updated_at as last-seen (best-effort; used by admin user list)
+  const { data: touched } = await supabase
+    .from("users")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", data.id)
+    .select("*")
+    .maybeSingle();
+
+  return (touched as DbUser) ?? (data as DbUser);
 }
 
 export async function nameExists(name: string): Promise<boolean> {

@@ -18,8 +18,9 @@ ShortJapan / HaanRiver / nextLotto와 **동일한 Supabase 프로젝트**를 사
 5. `supabase-migration-push.sql` → (구) WordCatch 전용 푸시 테이블
 6. `supabase-migration-push-remind-hour.sql` → (구) 알림 시각 컬럼
 7. **`supabase-migration-push-subscriptions-unified.sql`** → 공용 `push_subscriptions` (`app` = wordcatch | shortjapan) + 기존 데이터 이전
-8. **`supabase-migration-admin.sql`** → `users.is_admin` + `wordcatch_app_settings`  
-   - 최초 관리자: `UPDATE users SET is_admin = true WHERE name = '당신이름';
+8. **`supabase-migration-admin.sql`** → `users.is_admin` + `wordcatch_app_settings`
+9. **`supabase-migration-roles.sql`** → `users.role` (super_admin|admin|user) + `wordcatch_admin_roster`  
+   - 최초 슈퍼관리자: `UPDATE users SET role = 'super_admin', is_admin = true WHERE name = '당신이름';
 
 ## 2. 환경 변수
 

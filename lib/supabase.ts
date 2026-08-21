@@ -5,17 +5,25 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
+export type UserRole = "super_admin" | "admin" | "user";
+
 export interface DbUser {
   id: string;
   name: string;
   organization: string;
   high_score: number;
+  /** @deprecated prefer role */
   is_admin?: boolean;
+  role?: UserRole | string;
   created_at: string;
   updated_at: string;
 }
 
-export function isAdminUser(user: Pick<DbUser, "is_admin"> | null | undefined): boolean {
+/** Admin tab access: super_admin or admin */
+export function isAdminUser(
+  user: Pick<DbUser, "is_admin" | "role"> | null | undefined
+): boolean {
+  if (user?.role === "super_admin" || user?.role === "admin") return true;
   return user?.is_admin === true;
 }
 
