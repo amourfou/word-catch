@@ -10,8 +10,13 @@ export interface DbUser {
   name: string;
   organization: string;
   high_score: number;
+  is_admin?: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export function isAdminUser(user: Pick<DbUser, "is_admin"> | null | undefined): boolean {
+  return user?.is_admin === true;
 }
 
 export type WordStatus = "unknown" | "learning" | "mastered";

@@ -21,6 +21,7 @@ export default function HomePage() {
   });
   const [accuracy, setAccuracy] = useState({ rate: 0, total: 0 });
   const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     if (!user) return;
@@ -36,6 +37,29 @@ export default function HomePage() {
     })();
   }, [user]);
 
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { supabase } = await import("@/lib/supabase");
+        const { data } = await supabase
+          .from("wordcatch_app_settings")
+          .select("value")
+          .eq("key", "notice_text")
+          .maybeSingle();
+        const raw = data?.value;
+        const text =
+          typeof raw === "string"
+            ? raw
+            : raw != null
+              ? String(raw)
+              : "";
+        setNotice(text.replace(/^"|"$/g, "").trim());
+      } catch {
+        /* settings table optional */
+      }
+    })();
+  }, []);
+
   const masteredRate =
     counts.total > 0 ? Math.round((counts.mastered / counts.total) * 100) : 0;
 
@@ -48,6 +72,11 @@ export default function HomePage() {
         <p className="mt-1 text-sm text-muted-foreground">
           모르는 단어를 잡고, 복습으로 붙잡아요
         </p>
+        {notice && (
+          <p className="mt-3 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-xs font-medium text-primary">
+            {notice}
+          </p>
+        )}
       </section>
 
       <section className="grid grid-cols-2 gap-3">

@@ -10,6 +10,7 @@ import {
   Moon,
   Plus,
   Search,
+  Shield,
   Sun,
   Zap,
 } from "lucide-react";
@@ -17,9 +18,10 @@ import { useTheme } from "next-themes";
 import { useAuth } from "@/components/AuthProvider";
 import { PersistentDictPanel } from "@/components/PersistentDictPanel";
 import { Button } from "@/components/ui/button";
+import { isAdminUser } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
-const nav = [
+const baseNav = [
   { href: "/words", label: "단어", icon: BookOpen },
   { href: "/words/new", label: "추가", icon: Plus },
   { href: "/review", label: "복습", icon: Zap },
@@ -46,6 +48,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { theme, setTheme } = useTheme();
   const isDict = pathname === "/dict" || pathname.startsWith("/dict/");
   const [dictMounted, setDictMounted] = useState(false);
+  const admin = isAdminUser(user);
+  const nav = admin
+    ? [...baseNav, { href: "/admin", label: "관리", icon: Shield }]
+    : baseNav;
 
   useEffect(() => {
     if (isDict) setDictMounted(true);
@@ -125,7 +131,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       <nav className="safe-pad fixed bottom-0 left-0 right-0 z-20 border-t border-border/60 bg-background/90 backdrop-blur-md">
-        <div className="phone-shell mx-auto grid grid-cols-5 gap-0.5 px-1 py-2 sm:gap-1 sm:px-2">
+        <div
+          className={cn(
+            "phone-shell mx-auto grid gap-0.5 px-1 py-2 sm:gap-1 sm:px-2",
+            admin ? "grid-cols-6" : "grid-cols-5"
+          )}
+        >
           {nav.map(({ href, label, icon: Icon }) => {
             const active = isNavActive(pathname, href);
             return (

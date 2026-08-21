@@ -120,13 +120,17 @@ export default function ReviewSessionPage() {
 
     const entry: SessionAnswer = {
       wordId: item.word.id,
-      word: item.word.word,
+      word:
+        item.kind === "idiom" && item.idiom
+          ? item.idiom.phrase
+          : item.word.word,
       isCorrect,
       userAnswer,
       correctAnswer: item.correctAnswer,
       mode: session.settings.mode,
       testType: item.testType,
       direction: item.direction,
+      kind: item.kind ?? "word",
     };
 
     const nextSession: ReviewSessionState = {
@@ -269,8 +273,9 @@ export default function ReviewSessionPage() {
         <p className="text-xs font-medium text-muted-foreground">
           {directionLabel(item.direction)}
           {item.testType === "multiple_choice" ? " · 객관식" : " · 주관식"}
+          {item.kind === "idiom" ? " · 숙어" : ""}
         </p>
-        {item.direction === "listen_to_ko" ? (
+        {item.direction === "listen_to_ko" && item.kind !== "idiom" ? (
           <ListenPrompt
             phonetic={item.prompt}
             word={item.word.word}
@@ -278,6 +283,11 @@ export default function ReviewSessionPage() {
           />
         ) : (
           <p className="mt-3 font-display text-2xl font-semibold">{item.prompt}</p>
+        )}
+        {item.kind === "idiom" && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            관련 단어: {item.word.word}
+          </p>
         )}
       </div>
 
@@ -302,7 +312,7 @@ export default function ReviewSessionPage() {
                 onClick={() => {
                   setAnswer(c);
                   void finishAnswer(
-                    gradeAnswer(item.direction, item.word, c) ||
+                    gradeAnswer(item.direction, item.word, c, item.idiom) ||
                       c === item.correctAnswer,
                     c
                   );
@@ -331,14 +341,21 @@ export default function ReviewSessionPage() {
               void finishAnswer(false, "");
               return;
             }
-            const ok = gradeAnswer(item.direction, item.word, answer);
+            const ok = gradeAnswer(
+              item.direction,
+              item.word,
+              answer,
+              item.idiom
+            );
             void finishAnswer(ok, answer);
           }}
         >
           <Input
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
-            placeholder="답을 입력하세요"
+            placeholder={
+              item.kind === "idiom" ? "숙어 뜻 또는 표현을 입력하세요" : "답을 입력하세요"
+            }
             autoFocus
             disabled={busy}
             autoCapitalize="off"
@@ -363,7 +380,13 @@ export default function ReviewSessionPage() {
         >
           {feedback === "correct"
             ? "정답!"
-            : `오답 · 정답: ${item.word.meanings.join(", ")} / ${item.word.word}`}
+            : `오답 · 정답: ${item.correctAnswer}${
+                item.kind === "idiom" && item.idiom
+                  ? ` (${item.idiom.phrase})`
+                  : item.kind !== "idiom"
+                    ? ` / ${item.word.word}`
+                    : ""
+              }`}
         </p>
       )}
     </div>

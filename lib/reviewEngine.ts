@@ -8,6 +8,7 @@ import type {
   ReviewDirection,
   ReviewMode,
   TestType,
+  WordIdiom,
   WordRow,
   WordStatus,
 } from "@/lib/supabase";
@@ -32,8 +33,13 @@ export interface ReviewSettings {
   count: number;
 }
 
+export type ReviewItemKind = "word" | "idiom";
+
 export interface ReviewItem {
   word: WordRow;
+  /** word = 표제어, idiom = 해당 단어에 등록된 숙어 */
+  kind: ReviewItemKind;
+  idiom: WordIdiom | null;
   direction: ReviewDirection;
   testType: TestType | null;
   choices: string[] | null;
@@ -50,7 +56,13 @@ export interface SessionAnswer {
   mode: ReviewMode;
   testType: TestType | null;
   direction: ReviewDirection | null;
+  kind?: ReviewItemKind;
 }
+
+/** One quiz-able unit: headword or an idiom on that word. */
+type ReviewSource =
+  | { kind: "word"; word: WordRow }
+  | { kind: "idiom"; word: WordRow; idiom: WordIdiom };
 
 export interface ReviewSessionState {
   settings: ReviewSettings;
@@ -80,12 +92,25 @@ export function normalizeMeaningAnswer(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, "");
 }
 
-/** KO↔EN: any one of meanings matching (or word for en side). */
+/** KO↔EN for headword or idiom. */
 export function gradeAnswer(
   direction: ReviewDirection,
   word: WordRow,
-  userAnswer: string
+  userAnswer: string,
+  idiom?: WordIdiom | null
 ): boolean {
+  if (idiom) {
+    if (direction === "ko_to_en") {
+      const normalized = normalizeAnswer(userAnswer);
+      if (!normalized) return false;
+      return normalizeAnswer(idiom.phrase) === normalized;
+    }
+    // en_to_ko / listen (idioms treat listen as meaning answer)
+    const normalized = normalizeMeaningAnswer(userAnswer);
+    if (!normalized) return false;
+    return normalizeMeaningAnswer(idiom.meaning) === normalized;
+  }
+
   if (direction === "ko_to_en") {
     const normalized = normalizeAnswer(userAnswer);
     if (!normalized) return false;
@@ -119,36 +144,67 @@ function isKoAnswerDirection(direction: ReviewDirection): boolean {
   return direction === "en_to_ko" || direction === "listen_to_ko";
 }
 
+function pushDistractor(
+  list: string[],
+  value: string,
+  correct: string
+): void {
+  if (list.length >= 3) return;
+  const v = value.trim();
+  if (!v) return;
+  if (normalizeAnswer(v) === normalizeAnswer(correct)) return;
+  if (list.some((x) => normalizeAnswer(x) === normalizeAnswer(v))) return;
+  list.push(v);
+}
+
 function buildChoices(
   word: WordRow,
   direction: ReviewDirection,
-  pool: WordRow[]
+  pool: WordRow[],
+  idiom?: WordIdiom | null
 ): string[] {
-  const correct = isKoAnswerDirection(direction)
-    ? word.meanings[0] ?? ""
-    : word.word;
+  const correct = idiom
+    ? isKoAnswerDirection(direction)
+      ? idiom.meaning
+      : idiom.phrase
+    : isKoAnswerDirection(direction)
+      ? word.meanings[0] ?? ""
+      : word.word;
 
   const distractors: string[] = [];
   const others = shuffle(pool.filter((w) => w.id !== word.id));
 
-  for (const w of others) {
-    if (distractors.length >= 3) break;
-    if (isKoAnswerDirection(direction)) {
-      const m = w.meanings[0];
-      if (m && normalizeAnswer(m) !== normalizeAnswer(correct) && !distractors.includes(m)) {
-        distractors.push(m);
+  if (idiom) {
+    for (const w of others) {
+      if (distractors.length >= 3) break;
+      for (const other of w.idioms ?? []) {
+        if (distractors.length >= 3) break;
+        if (isKoAnswerDirection(direction)) {
+          pushDistractor(distractors, other.meaning, correct);
+        } else {
+          pushDistractor(distractors, other.phrase, correct);
+        }
       }
-    } else {
-      if (
-        normalizeAnswer(w.word) !== normalizeAnswer(correct) &&
-        !distractors.includes(w.word)
-      ) {
-        distractors.push(w.word);
+    }
+    for (const w of others) {
+      if (distractors.length >= 3) break;
+      if (isKoAnswerDirection(direction)) {
+        pushDistractor(distractors, w.meanings[0] ?? "", correct);
+      } else {
+        pushDistractor(distractors, w.word, correct);
+      }
+    }
+  } else {
+    for (const w of others) {
+      if (distractors.length >= 3) break;
+      if (isKoAnswerDirection(direction)) {
+        pushDistractor(distractors, w.meanings[0] ?? "", correct);
+      } else {
+        pushDistractor(distractors, w.word, correct);
       }
     }
   }
 
-  // pad if not enough
   const pads = ["(보기 부족)", "—", "···", "?"];
   let i = 0;
   while (distractors.length < 3) {
@@ -193,13 +249,65 @@ export function pickWordsForReview(words: WordRow[], count: number): WordRow[] {
   return shuffle(picked);
 }
 
+function expandSources(words: WordRow[]): ReviewSource[] {
+  const out: ReviewSource[] = [];
+  for (const word of words) {
+    out.push({ kind: "word", word });
+    for (const idiom of word.idioms ?? []) {
+      const phrase = idiom.phrase?.trim() ?? "";
+      const meaning = idiom.meaning?.trim() ?? "";
+      if (phrase && meaning) {
+        out.push({ kind: "idiom", word, idiom: { phrase, meaning } });
+      }
+    }
+  }
+  return out;
+}
+
+function pickSourcesForReview(
+  sources: ReviewSource[],
+  count: number
+): ReviewSource[] {
+  const n = Math.min(Math.max(0, count), sources.length);
+  if (n === 0) return [];
+  if (n >= sources.length) return shuffle(sources);
+
+  const remaining = [...sources];
+  const picked: ReviewSource[] = [];
+
+  for (let i = 0; i < n; i++) {
+    const total = remaining.reduce((sum, s) => sum + pickWeight(s.word), 0);
+    let r = Math.random() * total;
+    let idx = remaining.length - 1;
+    for (let j = 0; j < remaining.length; j++) {
+      r -= pickWeight(remaining[j].word);
+      if (r <= 0) {
+        idx = j;
+        break;
+      }
+    }
+    picked.push(remaining[idx]);
+    remaining.splice(idx, 1);
+  }
+
+  return shuffle(picked);
+}
+
 function buildOneItem(
-  word: WordRow,
+  source: ReviewSource,
   settings: ReviewSettings,
   poolForChoices: WordRow[]
 ): ReviewItem {
-  const direction =
+  const word = source.word;
+  const idiom = source.kind === "idiom" ? source.idiom : null;
+
+  let direction: ReviewDirection =
     settings.mode === "flashcard" ? "en_to_ko" : pickDirection(settings.direction);
+
+  // Idioms have no dedicated TTS — treat listen as en→ko (phrase → meaning)
+  if (idiom && direction === "listen_to_ko") {
+    direction = "en_to_ko";
+  }
 
   let testType: TestType | null = null;
   let choices: string[] | null = null;
@@ -208,7 +316,15 @@ function buildOneItem(
 
   if (settings.mode === "test") {
     testType = settings.testFormat;
-    if (direction === "listen_to_ko") {
+    if (idiom) {
+      if (direction === "ko_to_en") {
+        prompt = idiom.meaning;
+        correctAnswer = idiom.phrase;
+      } else {
+        prompt = idiom.phrase;
+        correctAnswer = idiom.meaning;
+      }
+    } else if (direction === "listen_to_ko") {
       prompt = word.phonetic?.trim() || "🔊";
       correctAnswer = word.meanings[0] ?? "";
     } else if (direction === "en_to_ko") {
@@ -219,21 +335,42 @@ function buildOneItem(
       correctAnswer = word.word;
     }
     if (testType === "multiple_choice") {
-      choices = buildChoices(word, direction, poolForChoices);
+      choices = buildChoices(word, direction, poolForChoices, idiom);
     }
   }
 
-  return { word, direction, testType, choices, prompt, correctAnswer };
+  return {
+    word,
+    kind: idiom ? "idiom" : "word",
+    idiom,
+    direction,
+    testType,
+    choices,
+    prompt,
+    correctAnswer,
+  };
 }
 
-/** Pick N words (unknown-heavy), fully build every item, then return. */
+/**
+ * Build review items.
+ * - Flashcard: headwords only (idioms shown on flip).
+ * - Test: headwords + registered idioms mixed into the question pool.
+ */
 export function buildReviewItems(
   words: WordRow[],
   settings: ReviewSettings,
   poolForChoices: WordRow[]
 ): ReviewItem[] {
-  const picked = pickWordsForReview(words, settings.count);
-  return picked.map((word) => buildOneItem(word, settings, poolForChoices));
+  if (settings.mode === "flashcard") {
+    const picked = pickWordsForReview(words, settings.count);
+    return picked.map((word) =>
+      buildOneItem({ kind: "word", word }, settings, poolForChoices)
+    );
+  }
+
+  const sources = expandSources(words);
+  const picked = pickSourcesForReview(sources, settings.count);
+  return picked.map((source) => buildOneItem(source, settings, poolForChoices));
 }
 
 const STATUS_DATE_TARGETS: ReviewTarget[] = [
