@@ -7,12 +7,19 @@ import {
   getCachedDictionaryEntry,
   normalizeWordKey,
   saveDictionaryCache,
-} from "@/lib/dictionaryCache";
+} from "@/lib/server/dictionaryCache";
 
+import { currentUser } from "@/lib/server/session";
+
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Cache-first Merriam-Webster Learner's Dictionary proxy. */
 export async function GET(req: NextRequest) {
+  const me = await currentUser().catch(() => null);
+  if (!me) {
+    return NextResponse.json({ message: "다시 로그인해 주세요." }, { status: 401 });
+  }
   const word = req.nextUrl.searchParams.get("word")?.trim() ?? "";
   if (!word) {
     return NextResponse.json({ message: "단어가 비어 있어요." }, { status: 400 });

@@ -1,5 +1,7 @@
+import "server-only";
 import type { DictionaryEntry } from "@/lib/dictionary";
-import { supabase, type DictionaryRow } from "@/lib/supabase";
+import { supabase } from "@/lib/server/db";
+import { type DictionaryRow } from "@/lib/supabase";
 
 export function normalizeWordKey(word: string): string {
   return word.trim().toLowerCase().split(/\s+/)[0]?.replace(/[^a-z'-]/g, "") ?? "";

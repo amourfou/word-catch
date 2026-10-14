@@ -1,6 +1,12 @@
-import { supabase, type DbUser } from "@/lib/supabase";
+/**
+ * Client auth helpers. The real session is an HttpOnly signed cookie set by
+ * /api/session; localStorage only remembers the last name typed (for convenience)
+ * and a non-secret display cache.
+ */
+import type { DbUser } from "@/lib/supabase";
 
 const STORAGE_KEY = "wordcatch-user";
+const LAST_NAME_KEY = "wordcatch-last-name";
 
 export interface StoredSession {
   id: string;
@@ -9,40 +15,33 @@ export interface StoredSession {
   savedAt: string;
 }
 
-function readLocalSession(): StoredSession | null {
+export function getStoredSession(): StoredSession | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredSession;
-    if (!parsed?.id) return null;
-    return parsed;
+    return parsed?.id ? parsed : null;
   } catch {
     return null;
   }
 }
 
-function writeLocalSession(user: Pick<DbUser, "id" | "name" | "organization">): void {
-  if (typeof window === "undefined") return;
-  const payload: StoredSession = {
-    id: user.id,
-    name: user.name,
-    organization: user.organization ?? "",
-    savedAt: new Date().toISOString(),
-  };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-}
-
 export function getStoredUserId(): string | null {
-  return readLocalSession()?.id ?? null;
+  return getStoredSession()?.id ?? null;
 }
 
-export function getStoredSession(): StoredSession | null {
-  return readLocalSession();
-}
-
-export function saveUserSession(user: DbUser): void {
-  writeLocalSession(user);
+export function saveUserSession(user: Pick<DbUser, "id" | "name" | "organization">): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ id: user.id, name: user.name, organization: user.organization ?? "", savedAt: new Date().toISOString() })
+    );
+    localStorage.setItem(LAST_NAME_KEY, user.name);
+  } catch {
+    /* ignore */
+  }
 }
 
 export function clearUserSession(): void {
@@ -54,77 +53,59 @@ export function clearUserSession(): void {
   }
 }
 
-export async function getUserById(userId: string): Promise<DbUser | null> {
-  const { data, error } = await supabase
-    .from("users")
-    .select("*")
-    .eq("id", userId)
-    .single();
-  if (error || !data) return null;
-  return data as DbUser;
+export function getLastName(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem(LAST_NAME_KEY) || getStoredSession()?.name || "";
+  } catch {
+    return "";
+  }
 }
 
-export async function loginByName(name: string): Promise<DbUser | null> {
-  const trimmed = name.trim();
-  if (!trimmed) return null;
+export type MeResult = { user: DbUser | null; signupEnabled: boolean };
 
-  const { data, error } = await supabase
-    .from("users")
-    .select("*")
-    .eq("name", trimmed)
-    .maybeSingle();
-
-  if (error || !data) return null;
-
-  // Touch updated_at as last-seen (best-effort; used by admin user list)
-  const { data: touched } = await supabase
-    .from("users")
-    .update({ updated_at: new Date().toISOString() })
-    .eq("id", data.id)
-    .select("*")
-    .maybeSingle();
-
-  return (touched as DbUser) ?? (data as DbUser);
+export async function fetchMe(): Promise<MeResult> {
+  const res = await fetch("/api/session", { credentials: "same-origin", cache: "no-store" });
+  const data = (await res.json().catch(() => ({}))) as { user?: DbUser | null; signupEnabled?: boolean };
+  return { user: res.ok ? data.user ?? null : null, signupEnabled: data.signupEnabled === true };
 }
 
-export async function nameExists(name: string): Promise<boolean> {
-  const trimmed = name.trim();
-  if (!trimmed) return false;
-  const { data, error } = await supabase
-    .from("users")
-    .select("id")
-    .eq("name", trimmed)
-    .maybeSingle();
-  if (error) return false;
-  return !!data;
+export async function loginWithPin(
+  name: string,
+  pin: string
+): Promise<{ user: DbUser | null; error?: string; needsPin?: boolean; locked?: boolean }> {
+  const res = await fetch("/api/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ name: name.trim(), pin }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    user?: DbUser;
+    error?: string;
+    needsPin?: boolean;
+    locked?: boolean;
+  };
+  if (!res.ok || !data.user) {
+    return { user: null, error: data.error || "로그인하지 못했어요.", needsPin: data.needsPin, locked: data.locked };
+  }
+  return { user: data.user };
 }
 
 export async function registerUser(
   name: string,
   organization: string
-): Promise<{ user: DbUser | null; error?: string }> {
-  const trimmedName = name.trim();
-  const trimmedOrg = organization.trim();
+): Promise<{ ok: boolean; error?: string; message?: string }> {
+  const res = await fetch("/api/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ name: name.trim(), organization: organization.trim(), signup: true }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+  return res.ok ? { ok: true, message: data.message } : { ok: false, error: data.error || "등록 실패" };
+}
 
-  if (!trimmedName) return { user: null, error: "이름을 입력해 주세요." };
-  if (!trimmedOrg) return { user: null, error: "소속을 입력해 주세요." };
-  if (trimmedName.length > 10) return { user: null, error: "이름은 10자까지예요." };
-  if (trimmedOrg.length > 15) return { user: null, error: "소속은 15자까지예요." };
-
-  if (await nameExists(trimmedName)) {
-    return { user: null, error: "이미 사용 중인 이름이에요. 다른 이름을 써 주세요." };
-  }
-
-  const { data, error } = await supabase
-    .from("users")
-    .insert([{ name: trimmedName, organization: trimmedOrg, high_score: 0 }])
-    .select()
-    .single();
-
-  if (error || !data) {
-    console.error("registerUser", error);
-    return { user: null, error: "등록에 실패했어요. 잠시 후 다시 시도해 주세요." };
-  }
-
-  return { user: data as DbUser };
+export async function logoutRequest(): Promise<void> {
+  await fetch("/api/session", { method: "DELETE", credentials: "same-origin" }).catch(() => undefined);
 }

@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
-import { getAdminCaller, readAdminUserId } from "@/lib/adminAuth";
-import { supabase } from "@/lib/supabase";
+import { getAdminCaller } from "@/lib/server/adminAuth";
+import { supabase } from "@/lib/server/db";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const KEYS = ["ai_enabled", "ai_daily_limit", "notice_text"] as const;
 
 export async function GET(req: Request) {
-  const adminUserId = readAdminUserId(req);
-  const gate = await getAdminCaller(adminUserId);
+  const gate = await getAdminCaller();
   if (!gate.ok) {
     return NextResponse.json({ error: gate.error }, { status: gate.status });
   }
@@ -45,11 +45,9 @@ export async function GET(req: Request) {
 
 export async function PATCH(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
-    adminUserId?: string;
     settings?: Record<string, unknown>;
   };
-  const adminUserId = readAdminUserId(req, body);
-  const gate = await getAdminCaller(adminUserId);
+  const gate = await getAdminCaller();
   if (!gate.ok) {
     return NextResponse.json({ error: gate.error }, { status: gate.status });
   }

@@ -12,10 +12,9 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import {
   clearUserSession,
-  getStoredSession,
-  getStoredUserId,
-  getUserById,
-  loginByName,
+  fetchMe,
+  loginWithPin,
+  logoutRequest,
   registerUser,
   saveUserSession,
 } from "@/lib/auth";
@@ -24,7 +23,8 @@ import type { DbUser } from "@/lib/supabase";
 interface AuthContextValue {
   user: DbUser | null;
   loading: boolean;
-  login: (name: string) => Promise<{ ok: boolean; message?: string }>;
+  login: (name: string, pin: string) => Promise<{ ok: boolean; message?: string; needsPin?: boolean; locked?: boolean }>;
+  signupEnabled: boolean;
   register: (
     name: string,
     organization: string
@@ -43,37 +43,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
 
+  const [signupEnabled, setSignupEnabled] = useState(false);
+
   const refresh = useCallback(async () => {
-    const id = getStoredUserId();
-    if (!id) {
+    try {
+      const me = await fetchMe();
+      setSignupEnabled(me.signupEnabled);
+      if (me.user) {
+        saveUserSession(me.user);
+        setUser(me.user);
+      } else {
+        clearUserSession();
+        setUser(null);
+      }
+    } catch {
       setUser(null);
-      setLoading(false);
-      return;
-    }
-
-    const cached = getStoredSession();
-    if (cached?.id && cached.name) {
-      setUser({
-        id: cached.id,
-        name: cached.name,
-        organization: cached.organization,
-        high_score: 0,
-        is_admin: false,
-        role: "user",
-        created_at: "",
-        updated_at: "",
-      });
-    }
-
-    const u = await getUserById(id);
-    if (!u) {
-      clearUserSession();
-      setUser(null);
-    } else {
-      saveUserSession(u);
-      setUser(u);
     }
     setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const onUnauthorized = () => {
+      clearUserSession();
+      setUser(null);
+    };
+    window.addEventListener("wordcatch:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("wordcatch:unauthorized", onUnauthorized);
   }, []);
 
   useEffect(() => {
@@ -93,38 +88,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user, loading, pathname, router]);
 
-  const login = useCallback(async (name: string) => {
-    const u = await loginByName(name);
-    if (!u) {
-      return {
-        ok: false,
-        message: "이름을 찾을 수 없어요. 등록 후 이용해 주세요.",
-      };
+  const login = useCallback(async (name: string, pin: string) => {
+    const r = await loginWithPin(name, pin);
+    if (!r.user) {
+      return { ok: false, message: r.error, needsPin: r.needsPin, locked: r.locked };
     }
-    saveUserSession(u);
-    setUser(u);
+    saveUserSession(r.user);
+    setUser(r.user);
     return { ok: true };
   }, []);
 
   const register = useCallback(async (name: string, organization: string) => {
-    const { user: u, error } = await registerUser(name, organization);
-    if (!u) {
-      return { ok: false, message: error ?? "등록 실패" };
-    }
-    saveUserSession(u);
-    setUser(u);
-    return { ok: true };
+    const r = await registerUser(name, organization);
+    return r.ok ? { ok: true, message: r.message } : { ok: false, message: r.error };
   }, []);
 
   const logout = useCallback(() => {
+    void logoutRequest();
     clearUserSession();
     setUser(null);
     router.replace("/login");
   }, [router]);
 
   const value = useMemo(
-    () => ({ user, loading, login, register, logout, refresh }),
-    [user, loading, login, register, logout, refresh]
+    () => ({ user, loading, login, register, logout, refresh, signupEnabled }),
+    [user, loading, login, register, logout, refresh, signupEnabled]
   );
 
   const isPublic = PUBLIC_PATHS.some(

@@ -1,18 +1,23 @@
 import { NextResponse } from "next/server";
 import {
+  assertCanManageUser,
   getAdminCaller,
   getManagedUserIds,
-  readAdminUserId,
-} from "@/lib/adminAuth";
+} from "@/lib/server/adminAuth";
 import { getUserRole, type UserRole } from "@/lib/roles";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/server/db";
+import { ApiError } from "@/lib/server/http";
+import { clearPinLock, setPin } from "@/lib/server/pin";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 async function enrichUsers(rows: Record<string, unknown>[]) {
   const ids = rows.map((u) => u.id as string);
   const countMap = new Map<string, number>();
   const lastReviewMap = new Map<string, string>();
+  const pinSet = new Set<string>();
+  const lockedSet = new Set<string>();
 
   if (ids.length) {
     const { data: words } = await supabase
@@ -22,6 +27,16 @@ async function enrichUsers(rows: Record<string, unknown>[]) {
     for (const w of words ?? []) {
       const uid = w.user_id as string;
       countMap.set(uid, (countMap.get(uid) ?? 0) + 1);
+    }
+
+    const { data: pins, error: pinErr } = await supabase
+      .from("user_pins")
+      .select("user_id, locked_until")
+      .in("user_id", ids);
+    if (pinErr) console.warn("user_pins unavailable", pinErr.message);
+    for (const p of pins ?? []) {
+      pinSet.add(p.user_id as string);
+      if (p.locked_until && Date.parse(p.locked_until as string) > Date.now()) lockedSet.add(p.user_id as string);
     }
 
     const { data: logs } = await supabase
@@ -54,13 +69,14 @@ async function enrichUsers(rows: Record<string, unknown>[]) {
       wordCount: countMap.get(u.id as string) ?? 0,
       lastSeenAt: (u.updated_at as string) || null,
       lastReviewAt: lastReviewMap.get(u.id as string) ?? null,
+      hasPin: pinSet.has(u.id as string),
+      pinLocked: lockedSet.has(u.id as string),
     };
   });
 }
 
 export async function GET(req: Request) {
-  const adminUserId = readAdminUserId(req);
-  const gate = await getAdminCaller(adminUserId);
+  const gate = await getAdminCaller();
   if (!gate.ok) {
     return NextResponse.json({ error: gate.error }, { status: gate.status });
   }
@@ -122,14 +138,12 @@ export async function GET(req: Request) {
 /** Register a user under this admin's roster (admin/super). */
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
-    adminUserId?: string;
     name?: string;
     organization?: string;
     /** Existing user id to link into roster (instead of create) */
     linkUserId?: string;
   };
-  const adminUserId = readAdminUserId(req, body);
-  const gate = await getAdminCaller(adminUserId);
+  const gate = await getAdminCaller();
   if (!gate.ok) {
     return NextResponse.json({ error: gate.error }, { status: gate.status });
   }
@@ -251,19 +265,38 @@ export async function POST(req: Request) {
 /** Super admin: set role. Admin: remove member from roster. */
 export async function PATCH(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
-    adminUserId?: string;
     userId?: string;
     role?: UserRole;
     /** admin removes member from their roster */
-    action?: "set_role" | "remove_from_roster";
+    action?: "set_role" | "remove_from_roster" | "set_pin" | "unlock_pin";
+    /** 6-digit PIN for set_pin. Never logged or echoed back. */
+    pin?: string;
   };
-  const adminUserId = readAdminUserId(req, body);
-  const gate = await getAdminCaller(adminUserId);
+  const gate = await getAdminCaller();
   if (!gate.ok) {
     return NextResponse.json({ error: gate.error }, { status: gate.status });
   }
   if (!body.userId) {
     return NextResponse.json({ error: "userId required" }, { status: 400 });
+  }
+
+  if (body.action === "set_pin" || body.action === "unlock_pin") {
+    const allowed = await assertCanManageUser(gate.caller, body.userId);
+    if (!allowed.ok && body.userId !== gate.caller.admin.id) {
+      return NextResponse.json({ error: allowed.error }, { status: allowed.status });
+    }
+    try {
+      if (body.action === "unlock_pin") {
+        await clearPinLock(body.userId);
+        return NextResponse.json({ ok: true, unlocked: true });
+      }
+      await setPin(body.userId, String(body.pin ?? ""));
+      return NextResponse.json({ ok: true, pinSet: true });
+    } catch (e) {
+      if (e instanceof ApiError) return NextResponse.json({ error: e.message }, { status: e.status });
+      console.error("set_pin failed");
+      return NextResponse.json({ error: "PIN 저장에 실패했어요." }, { status: 500 });
+    }
   }
 
   if (body.action === "remove_from_roster") {
@@ -284,6 +317,9 @@ export async function PATCH(req: Request) {
       { error: "등급 변경은 슈퍼관리자만 가능해요." },
       { status: 403 }
     );
+  }
+  if (body.userId === gate.caller.admin.id) {
+    return NextResponse.json({ error: "자기 자신의 등급은 바꿀 수 없어요." }, { status: 400 });
   }
   if (!body.role || !["super_admin", "admin", "user"].includes(body.role)) {
     return NextResponse.json({ error: "role required" }, { status: 400 });

@@ -22,6 +22,8 @@ type AdminUser = {
   wordCount: number;
   lastSeenAt: string | null;
   lastReviewAt: string | null;
+  hasPin?: boolean;
+  pinLocked?: boolean;
 };
 
 const TABS: { id: Tab; label: string }[] = [
@@ -364,6 +366,16 @@ function UsersPanel({
                     <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
                       {roleLabel(u.role)}
                     </span>
+                    {u.hasPin === false && (
+                      <span className="ml-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">
+                        PIN 없음
+                      </span>
+                    )}
+                    {u.pinLocked && (
+                      <span className="ml-1 rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] text-destructive">
+                        잠김
+                      </span>
+                    )}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {u.organization || "소속 없음"} · 단어 {u.wordCount}개
@@ -406,6 +418,7 @@ function UsersPanel({
                       </li>
                     ))}
                   </ul>
+                  <PinSetter user={u} adminUserId={adminUserId} onMessage={onMessage} onDone={() => void load()} />
                   {!isSuper && (
                     <button
                       type="button"
@@ -918,6 +931,105 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="rounded-2xl border border-border bg-card p-3">
       <p className="text-[11px] text-muted-foreground">{label}</p>
       <p className="mt-1 text-lg font-bold tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+/** Admin sets/resets a user's 6-digit PIN. The PIN is sent once over HTTPS and never shown again. */
+function PinSetter({
+  user,
+  adminUserId,
+  onMessage,
+  onDone,
+}: {
+  user: AdminUser;
+  adminUserId: string;
+  onMessage: (m: string | null) => void;
+  onDone: () => void;
+}) {
+  const [pin, setPinValue] = useState("");
+  const [pin2, setPin2] = useState("");
+  const [busy, setBusy] = useState(false);
+  const valid = /^\d{6}$/.test(pin) && pin === pin2;
+
+  const save = async () => {
+    if (!valid) return;
+    setBusy(true);
+    const res = await adminFetch("/api/admin/users", adminUserId, {
+      method: "PATCH",
+      json: { userId: user.id, action: "set_pin", pin },
+    });
+    setBusy(false);
+    setPinValue("");
+    setPin2("");
+    if (!res.ok) {
+      onMessage(res.error);
+      return;
+    }
+    onMessage(`${user.name} 님의 PIN을 ${user.hasPin ? "바꿨어요" : "만들었어요"}. 직접 알려 주세요.`);
+    onDone();
+  };
+
+  const unlock = async () => {
+    setBusy(true);
+    const res = await adminFetch("/api/admin/users", adminUserId, {
+      method: "PATCH",
+      json: { userId: user.id, action: "unlock_pin" },
+    });
+    setBusy(false);
+    onMessage(res.ok ? `${user.name} 님 잠금을 풀었어요.` : res.error);
+    if (res.ok) onDone();
+  };
+
+  const field = "h-11 w-full rounded-xl border border-border bg-background px-3 text-center text-lg tracking-[0.4em]";
+  return (
+    <div className="mt-3 rounded-xl border border-border p-3">
+      <p className="text-xs font-medium">{user.hasPin ? "PIN 다시 정하기" : "PIN 만들기 (없으면 로그인할 수 없어요)"}</p>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <input
+          type="password"
+          inputMode="numeric"
+          autoComplete="new-password"
+          maxLength={6}
+          placeholder="6자리"
+          value={pin}
+          onChange={(e) => setPinValue(e.target.value.replace(/\D/g, "").slice(0, 6))}
+          className={field}
+          aria-label="새 PIN"
+        />
+        <input
+          type="password"
+          inputMode="numeric"
+          autoComplete="new-password"
+          maxLength={6}
+          placeholder="한 번 더"
+          value={pin2}
+          onChange={(e) => setPin2(e.target.value.replace(/\D/g, "").slice(0, 6))}
+          className={field}
+          aria-label="새 PIN 확인"
+        />
+      </div>
+      {pin2.length === 6 && pin !== pin2 && <p className="mt-1 text-xs text-destructive">두 PIN이 달라요.</p>}
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          disabled={!valid || busy}
+          onClick={() => void save()}
+          className="flex-1 rounded-xl bg-primary py-2 text-xs font-semibold text-primary-foreground disabled:opacity-40"
+        >
+          {busy ? "저장 중…" : "PIN 저장"}
+        </button>
+        {user.pinLocked && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void unlock()}
+            className="rounded-xl border border-border px-3 py-2 text-xs font-semibold"
+          >
+            잠금 풀기
+          </button>
+        )}
+      </div>
     </div>
   );
 }

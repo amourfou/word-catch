@@ -1,5 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 
+/**
+ * Shared row types (client-safe).
+ *
+ * `supabase` (anon key) remains ONLY for the push notification modules
+ * (lib/push.ts, app/api/push/*, app/api/admin/push), which are worked on
+ * separately and intentionally left exactly as on main. All other data access
+ * goes through server API routes using lib/server/db.ts (service role).
+ * Do not import `supabase` from client components.
+ */
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 

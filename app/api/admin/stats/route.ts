@@ -3,16 +3,15 @@ import {
   assertCanManageUser,
   getAdminCaller,
   getManagedUserIds,
-  readAdminUserId,
-} from "@/lib/adminAuth";
+} from "@/lib/server/adminAuth";
 import { seoulDateKey, startOfTodaySeoulIso } from "@/lib/date";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/server/db";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const adminUserId = readAdminUserId(req);
-  const gate = await getAdminCaller(adminUserId);
+  const gate = await getAdminCaller();
   if (!gate.ok) {
     return NextResponse.json({ error: gate.error }, { status: gate.status });
   }

@@ -2,15 +2,15 @@ import { NextResponse } from "next/server";
 import {
   assertCanManageUser,
   getAdminCaller,
-  readAdminUserId,
-} from "@/lib/adminAuth";
-import { supabase, type WordStatus } from "@/lib/supabase";
+} from "@/lib/server/adminAuth";
+import { supabase } from "@/lib/server/db";
+import { type WordStatus } from "@/lib/supabase";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const adminUserId = readAdminUserId(req);
-  const gate = await getAdminCaller(adminUserId);
+  const gate = await getAdminCaller();
   if (!gate.ok) {
     return NextResponse.json({ error: gate.error }, { status: gate.status });
   }
@@ -61,7 +61,6 @@ export async function GET(req: Request) {
 
 export async function PATCH(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
-    adminUserId?: string;
     wordId?: string;
     userId?: string;
     word?: string;
@@ -70,8 +69,7 @@ export async function PATCH(req: Request) {
     source?: string | null;
     status?: WordStatus;
   };
-  const adminUserId = readAdminUserId(req, body);
-  const gate = await getAdminCaller(adminUserId);
+  const gate = await getAdminCaller();
   if (!gate.ok) {
     return NextResponse.json({ error: gate.error }, { status: gate.status });
   }
@@ -112,12 +110,10 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
-    adminUserId?: string;
     wordId?: string;
     userId?: string;
   };
-  const adminUserId = readAdminUserId(req, body);
-  const gate = await getAdminCaller(adminUserId);
+  const gate = await getAdminCaller();
   if (!gate.ok) {
     return NextResponse.json({ error: gate.error }, { status: gate.status });
   }
