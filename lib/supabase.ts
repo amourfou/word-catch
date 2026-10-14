@@ -9,10 +9,27 @@ import { createClient } from "@supabase/supabase-js";
  * goes through server API routes using lib/server/db.ts (service role).
  * Do not import `supabase` from client components.
  */
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+let anonClient: SupabaseClient | null = null;
+
+/**
+ * Created on first use (not at import) so `next build` works in environments
+ * without Supabase env vars (e.g. Vercel Preview). Same anon URL/key as before.
+ */
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_t, prop) {
+    if (!anonClient) {
+      anonClient = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+      );
+    }
+    const c = anonClient as unknown as Record<string | symbol, unknown>;
+    const v = c[prop];
+    return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(anonClient) : v;
+  },
+});
 
 export type UserRole = "super_admin" | "admin" | "user";
 
