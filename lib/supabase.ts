@@ -1,35 +1,7 @@
-import { createClient } from "@supabase/supabase-js";
-
 /**
- * Shared row types (client-safe).
- *
- * `supabase` (anon key) remains ONLY for the push notification modules
- * (lib/push.ts, app/api/push/*, app/api/admin/push), which are worked on
- * separately and intentionally left exactly as on main. All other data access
- * goes through server API routes using lib/server/db.ts (service role).
- * Do not import `supabase` from client components.
+ * Shared row types (client-safe). There is no Supabase client here anymore:
+ * all DB access goes through server code using lib/server/db.ts (service role key).
  */
-import type { SupabaseClient } from "@supabase/supabase-js";
-
-let anonClient: SupabaseClient | null = null;
-
-/**
- * Created on first use (not at import) so `next build` works in environments
- * without Supabase env vars (e.g. Vercel Preview). Same anon URL/key as before.
- */
-export const supabase = new Proxy({} as SupabaseClient, {
-  get(_t, prop) {
-    if (!anonClient) {
-      anonClient = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-      );
-    }
-    const c = anonClient as unknown as Record<string | symbol, unknown>;
-    const v = c[prop];
-    return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(anonClient) : v;
-  },
-});
 
 export type UserRole = "super_admin" | "admin" | "user";
 

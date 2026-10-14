@@ -19,7 +19,12 @@ const env = Object.fromEntries(
 );
 
 const url = env.NEXT_PUBLIC_SUPABASE_URL;
-const key = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// Service role key (server-only). The anon key no longer has access once RLS is locked down.
+const key = env.SUPABASE_SERVICE_ROLE_KEY;
+if (!url || !key) {
+  console.error("NEXT_PUBLIC_SUPABASE_URL 과 SUPABASE_SERVICE_ROLE_KEY 가 .env.local 에 필요합니다.");
+  process.exit(1);
+}
 const pub = env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 const priv = env.VAPID_PRIVATE_KEY;
 const subj = env.VAPID_SUBJECT || "mailto:test@example.com";

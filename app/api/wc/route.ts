@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { supabase } from "@/lib/server/db";
 import * as words from "@/lib/server/words";
 import { ApiError, assertSameOrigin, fail, readJson } from "@/lib/server/http";
 import { requireUser } from "@/lib/server/session";
@@ -38,6 +39,15 @@ const OPS: Record<string, (uid: string, a: Args) => Promise<unknown>> = {
   getRecentAccuracy: (uid, a) => words.getRecentAccuracy(uid, num(a[0], 50, 500)),
   getRecentLogs: (uid, a) => words.getRecentLogs(uid, num(a[0], 30, 500)),
   getDailyAccuracyTrend: (uid, a) => words.getDailyAccuracyTrend(uid, num(a[0], 7, 90)),
+  // Home-screen notice set by admins (wordcatch_app_settings.key = 'notice_text'), read-only.
+  getNotice: async () => {
+    const { data } = await supabase
+      .from("wordcatch_app_settings")
+      .select("value")
+      .eq("key", "notice_text")
+      .maybeSingle();
+    return data?.value ?? null;
+  },
   getTopWrongWords: (uid, a) => words.getTopWrongWords(uid, num(a[0], 10, 100)),
 };
 

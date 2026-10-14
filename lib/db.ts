@@ -56,3 +56,4 @@ export const getRecentLogs = (_userId: string, limit = 30) => call<ReviewLogRow[
 export const getDailyAccuracyTrend = (_userId: string, days = 7) =>
   call<DayAccuracy[]>("getDailyAccuracyTrend", days);
 export const getTopWrongWords = (_userId: string, limit = 10) => call<WrongWordStat[]>("getTopWrongWords", limit);
+export const getNotice = () => call<unknown>("getNotice");

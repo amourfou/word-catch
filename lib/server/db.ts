@@ -1,4 +1,5 @@
-import "server-only";
+// No "server-only" import here: lib/push.ts (used by the instrumentation scheduler on the
+// notification server) needs this client too. The key is not NEXT_PUBLIC_, so it never reaches the browser.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -9,6 +10,7 @@ let client: SupabaseClient | null = null;
 
 function getClient(): SupabaseClient {
   if (client) return client;
+  if (typeof window !== "undefined") throw new Error("server db used in browser");
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
   if (!url || !key) {

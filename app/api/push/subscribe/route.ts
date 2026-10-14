@@ -2,100 +2,84 @@ import { NextResponse } from "next/server";
 import {
   DEFAULT_REMIND_HOUR_KST,
   getRemindHourForUser,
-  removePushSubscription,
+  removePushSubscriptionForUser,
   savePushSubscription,
   updateRemindHourForUser,
   type PushSubscriptionJSON,
 } from "@/lib/push";
+import { assertSameOrigin, fail, readJson } from "@/lib/server/http";
+import { requireUser } from "@/lib/server/session";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-/** Save browser push subscription for a user. */
+/**
+ * Push subscription for the logged-in user. The user id comes from the session
+ * cookie; any userId in the body/query (older clients still send it) is ignored.
+ */
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as {
-      userId?: string;
-      subscription?: PushSubscriptionJSON;
-      remindHourKst?: number;
-    };
-    if (!body.userId || !body.subscription) {
-      return NextResponse.json(
-        { error: "userId and subscription required" },
-        { status: 400 }
-      );
+    assertSameOrigin(req);
+    const me = await requireUser();
+    const body = await readJson<{ subscription?: PushSubscriptionJSON; remindHourKst?: number }>(req);
+    if (!body.subscription) {
+      return NextResponse.json({ error: "subscription required" }, { status: 400 });
     }
-    const result = await savePushSubscription(
-      body.userId,
-      body.subscription,
-      body.remindHourKst ?? DEFAULT_REMIND_HOUR_KST
-    );
+    const hour = body.remindHourKst ?? DEFAULT_REMIND_HOUR_KST;
+    const result = await savePushSubscription(me.id, body.subscription, hour);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 500 });
     }
-    return NextResponse.json({
-      ok: true,
-      remindHourKst: body.remindHourKst ?? DEFAULT_REMIND_HOUR_KST,
-    });
+    return NextResponse.json({ ok: true, remindHourKst: hour });
   } catch (e) {
-    console.error("POST /api/push/subscribe", e);
-    return NextResponse.json({ error: "server error" }, { status: 500 });
+    return fail(e);
   }
 }
 
-/** Update remind hour for all of a user's subscriptions. */
 export async function PATCH(req: Request) {
   try {
-    const body = (await req.json()) as {
-      userId?: string;
-      remindHourKst?: number;
-    };
-    if (!body.userId || body.remindHourKst === undefined) {
-      return NextResponse.json(
-        { error: "userId and remindHourKst required" },
-        { status: 400 }
-      );
+    assertSameOrigin(req);
+    const me = await requireUser();
+    const body = await readJson<{ remindHourKst?: number }>(req);
+    if (body.remindHourKst === undefined) {
+      return NextResponse.json({ error: "remindHourKst required" }, { status: 400 });
     }
-    const result = await updateRemindHourForUser(body.userId, body.remindHourKst);
+    const result = await updateRemindHourForUser(me.id, body.remindHourKst);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
     return NextResponse.json({ ok: true, remindHourKst: result.hour });
   } catch (e) {
-    console.error("PATCH /api/push/subscribe", e);
-    return NextResponse.json({ error: "server error" }, { status: 500 });
+    return fail(e);
   }
 }
 
-/** Load saved remind hour for user. */
-export async function GET(req: Request) {
+export async function GET() {
   try {
-    const userId = new URL(req.url).searchParams.get("userId");
-    if (!userId) {
-      return NextResponse.json({ error: "userId required" }, { status: 400 });
-    }
-    const { hour, hasSubscription } = await getRemindHourForUser(userId);
+    const me = await requireUser();
+    const { hour, hasSubscription } = await getRemindHourForUser(me.id);
     return NextResponse.json({
       ok: true,
       hasSubscription,
       remindHourKst: hour ?? DEFAULT_REMIND_HOUR_KST,
     });
   } catch (e) {
-    console.error("GET /api/push/subscribe", e);
-    return NextResponse.json({ error: "server error" }, { status: 500 });
+    return fail(e);
   }
 }
 
-/** Remove subscription by endpoint */
+/** Remove one of MY subscriptions by endpoint. */
 export async function DELETE(req: Request) {
   try {
-    const body = (await req.json()) as { endpoint?: string };
+    assertSameOrigin(req);
+    const me = await requireUser();
+    const body = await readJson<{ endpoint?: string }>(req);
     if (!body.endpoint) {
       return NextResponse.json({ error: "endpoint required" }, { status: 400 });
     }
-    await removePushSubscription(body.endpoint);
+    await removePushSubscriptionForUser(me.id, body.endpoint);
     return NextResponse.json({ ok: true });
   } catch (e) {
-    console.error("DELETE /api/push/subscribe", e);
-    return NextResponse.json({ error: "server error" }, { status: 500 });
+    return fail(e);
   }
 }

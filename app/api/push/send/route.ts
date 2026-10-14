@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { formatHourKst } from "@/lib/date";
 import {
@@ -5,23 +6,29 @@ import {
   sendPushToAll,
   sendPushToUser,
   type PushPayload,
-  type PushSubscriptionJSON,
 } from "@/lib/push";
 import { isPushSchedulerEnabled } from "@/lib/pushConfig";
+import { currentUser } from "@/lib/server/session";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
+/** Cron auth: `Authorization: Bearer <CRON_SECRET>` only (no query string, no x-cron-secret). */
 function isAuthorizedCron(req: Request): boolean {
-  const auth = req.headers.get("authorization") || "";
-  const cronSecret =
-    process.env.CRON_SECRET || process.env.PUSH_CRON_SECRET || "";
+  const cronSecret = process.env.CRON_SECRET || process.env.PUSH_CRON_SECRET || "";
   if (!cronSecret) return false;
-  if (auth === `Bearer ${cronSecret}`) return true;
-  if (req.headers.get("x-cron-secret") === cronSecret) return true;
-  const url = new URL(req.url);
-  if (url.searchParams.get("secret") === cronSecret) return true;
-  return false;
+  const auth = req.headers.get("authorization") || "";
+  const expected = Buffer.from(`Bearer ${cronSecret}`);
+  const given = Buffer.from(auth);
+  return given.length === expected.length && crypto.timingSafeEqual(given, expected);
 }
+
+/** Fixed notification templates. Clients pick a template id; they cannot send free text or links. */
+const TEMPLATES = {
+  test: { title: "WordCatch", body: "알림이 잘 와요! 오늘도 단어 잡으러 가 볼까요?", url: "/review" },
+  due: { title: "WordCatch", body: "오늘도 단어를 잡아볼까요?", url: "/review" },
+} as const;
+type TemplateId = keyof typeof TEMPLATES;
 
 function schedulerDisabledResponse() {
   return NextResponse.json(
@@ -36,30 +43,22 @@ function schedulerDisabledResponse() {
 }
 
 /**
- * Send free Web Push.
- * - Self test (always): { userId, title?, body?, subscription? }
- * - Scheduled broadcast: only when PUSH_SCHEDULER_ENABLED=true + CRON_SECRET
+ * Send free Web Push (fixed templates only).
+ * - Self test: logged-in session → own devices, "test" template.
+ * - Scheduled broadcast: `Authorization: Bearer CRON_SECRET` + PUSH_SCHEDULER_ENABLED=true
  */
 export async function POST(req: Request) {
   try {
     const isCron = isAuthorizedCron(req);
 
     const body = (await req.json().catch(() => ({}))) as {
-      userId?: string;
-      title?: string;
-      body?: string;
-      url?: string;
+      template?: string;
       all?: boolean;
       dueOnly?: boolean;
-      subscription?: PushSubscriptionJSON;
     };
 
-    const payload: PushPayload = {
-      title: body.title || "WordCatch",
-      body: body.body || "오늘도 단어를 잡아볼까요?",
-      url: body.url || "/review",
-      tag: "wordcatch-remind",
-    };
+    const templateId: TemplateId = body.template === "test" ? "test" : "due";
+    const payload: PushPayload = { ...TEMPLATES[templateId], tag: "wordcatch-remind" };
 
     if (isCron || body.all) {
       if (!isCron) {
@@ -81,15 +80,16 @@ export async function POST(req: Request) {
       });
     }
 
-    // Manual / self-test send — allowed on any host (Vercel or personal)
-    if (!body.userId) {
-      return NextResponse.json({ error: "userId required" }, { status: 400 });
+    // Self-test: only to the logged-in user's own devices, fixed "test" template.
+    const me = await currentUser();
+    if (!me) {
+      return NextResponse.json({ error: "다시 로그인해 주세요." }, { status: 401 });
     }
 
     const result = await sendPushToUser(
-      body.userId,
-      payload,
-      body.subscription ?? null
+      me.id,
+      { ...TEMPLATES.test, tag: "wordcatch-test" },
+      null
     );
 
     if (result.sent === 0) {
@@ -124,9 +124,8 @@ export async function GET(req: Request) {
 
   try {
     const result = await sendDueReminders({
-      title: "WordCatch",
+      ...TEMPLATES.due,
       body: "복습 시간이에요! 오늘도 단어를 잡아볼까요?",
-      url: "/review",
       tag: "wordcatch-daily",
     });
     return NextResponse.json({

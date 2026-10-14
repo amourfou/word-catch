@@ -40,13 +40,8 @@ export default function HomePage() {
   useEffect(() => {
     void (async () => {
       try {
-        const { supabase } = await import("@/lib/supabase");
-        const { data } = await supabase
-          .from("wordcatch_app_settings")
-          .select("value")
-          .eq("key", "notice_text")
-          .maybeSingle();
-        const raw = data?.value;
+        const { getNotice } = await import("@/lib/db");
+        const raw = await getNotice();
         const text =
           typeof raw === "string"
             ? raw

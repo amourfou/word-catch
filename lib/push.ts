@@ -1,6 +1,6 @@
 import { seoulDateKey, seoulHour, startOfTodaySeoulIso } from "@/lib/date";
 import { DEFAULT_REMIND_HOUR_KST } from "@/lib/pushRemind";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/server/db";
 
 export { DEFAULT_REMIND_HOUR_KST } from "@/lib/pushRemind";
 
@@ -161,6 +161,21 @@ export async function removePushSubscription(endpoint: string): Promise<boolean>
     .eq("endpoint", endpoint);
   if (error) {
     console.error("removePushSubscription", error);
+    return false;
+  }
+  return true;
+}
+
+/** Remove a subscription only if it belongs to this user. */
+export async function removePushSubscriptionForUser(userId: string, endpoint: string): Promise<boolean> {
+  const { error } = await supabase
+    .from(TABLE)
+    .delete()
+    .eq("app", PUSH_APP)
+    .eq("user_id", userId)
+    .eq("endpoint", endpoint);
+  if (error) {
+    console.error("removePushSubscriptionForUser", error);
     return false;
   }
   return true;

@@ -3,16 +3,15 @@ import {
   assertCanManageUser,
   getAdminCaller,
   getManagedUserIds,
-  readAdminUserId,
-} from "@/lib/adminAuth";
+} from "@/lib/server/adminAuth";
 import { sendPushToUser } from "@/lib/push";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/server/db";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const adminUserId = readAdminUserId(req);
-  const gate = await getAdminCaller(adminUserId);
+  const gate = await getAdminCaller();
   if (!gate.ok) {
     return NextResponse.json({ error: gate.error }, { status: gate.status });
   }
@@ -88,13 +87,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
-    adminUserId?: string;
     userId?: string;
-    title?: string;
-    body?: string;
   };
-  const adminUserId = readAdminUserId(req, body);
-  const gate = await getAdminCaller(adminUserId);
+  const gate = await getAdminCaller();
   if (!gate.ok) {
     return NextResponse.json({ error: gate.error }, { status: gate.status });
   }
@@ -108,8 +103,9 @@ export async function POST(req: Request) {
   }
 
   const result = await sendPushToUser(body.userId, {
-    title: body.title || "WordCatch",
-    body: body.body || "복습할 시간이에요! 테스트 한 번 해볼까요?",
+    // Fixed template: admins cannot send arbitrary text or links to a child's device.
+    title: "WordCatch",
+    body: "복습할 시간이에요! 테스트 한 번 해볼까요?",
     url: "/review",
     tag: "wordcatch-admin-nudge",
   });
