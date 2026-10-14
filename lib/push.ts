@@ -1,6 +1,7 @@
 import { seoulDateKey, seoulHour, startOfTodaySeoulIso } from "@/lib/date";
 import { DEFAULT_REMIND_HOUR_KST } from "@/lib/pushRemind";
 import { supabase } from "@/lib/server/db";
+import { pickWordsOfDay, wordOfDayBody } from "@/lib/wordOfDay";
 
 export { DEFAULT_REMIND_HOUR_KST } from "@/lib/pushRemind";
 
@@ -500,8 +501,19 @@ export async function sendDueReminders(payload?: Partial<PushPayload>): Promise<
   let failed = 0;
   const okEndpoints: string[] = [];
 
+  // 오늘의 단어: 사용자별 단어를 고르고, 없으면 기존 문구(full.body)를 그대로 쓴다.
+  const words = await pickWordsOfDay(
+    due.map((r) => r.user_id).filter((id): id is string => !!id)
+  );
+  let withWord = 0;
+
   for (const sub of due) {
-    const r = await sendPushToSubscription(sub, full);
+    const w = sub.user_id ? words.get(sub.user_id) : undefined;
+    if (w) withWord += 1;
+    const r = await sendPushToSubscription(
+      sub,
+      w ? { ...full, body: wordOfDayBody(w) } : full
+    );
     if (r.status === "ok") {
       sent += 1;
       okEndpoints.push(sub.endpoint);
@@ -511,6 +523,7 @@ export async function sendDueReminders(payload?: Partial<PushPayload>): Promise<
   }
 
   await markNotified(okEndpoints, today);
+  console.log(`[push-scheduler] word-of-day devices=${withWord}/${due.length}`);
   return {
     sent,
     failed,
