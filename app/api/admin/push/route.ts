@@ -6,6 +6,7 @@ import {
 } from "@/lib/server/adminAuth";
 import { sendPushToUser } from "@/lib/push";
 import { supabase } from "@/lib/server/db";
+import { readRecentPushLogs } from "@/lib/pushLog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ export async function GET(req: Request) {
       total: 0,
       byHour: [],
       subscriptions: [],
+      sendLogs: [],
     });
   }
 
@@ -44,8 +46,20 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // 기기별 발송 결과 (최근 300건, 관리 대상 사용자만)
+  const allLogs = await readRecentPushLogs(300);
+  const managedSet = managedIds ? new Set(managedIds) : null;
+  const logs = managedSet
+    ? allLogs.filter((l) => l.userId && managedSet.has(l.userId))
+    : allLogs;
+
   const userIds = Array.from(
-    new Set((data ?? []).map((r) => r.user_id as string).filter(Boolean))
+    new Set(
+      [
+        ...(data ?? []).map((r) => r.user_id as string),
+        ...logs.map((l) => l.userId as string),
+      ].filter(Boolean)
+    )
   );
   const nameMap = new Map<string, string>();
   if (userIds.length) {
@@ -82,6 +96,10 @@ export async function GET(req: Request) {
       .sort((a, b) => a[0] - b[0])
       .map(([hour, count]) => ({ hour, count })),
     subscriptions: rows,
+    sendLogs: logs.map((l) => ({
+      ...l,
+      userName: l.userId ? nameMap.get(l.userId) ?? "(unknown)" : "(없음)",
+    })),
   });
 }
 
@@ -108,7 +126,7 @@ export async function POST(req: Request) {
     body: "복습할 시간이에요! 테스트 한 번 해볼까요?",
     url: "/review",
     tag: "wordcatch-admin-nudge",
-  });
+  }, null, undefined, "admin_test");
 
   if (result.sent === 0) {
     return NextResponse.json(

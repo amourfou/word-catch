@@ -2,6 +2,12 @@ import { seoulDateKey, seoulHour, startOfTodaySeoulIso } from "@/lib/date";
 import { DEFAULT_REMIND_HOUR_KST } from "@/lib/pushRemind";
 import { supabase } from "@/lib/server/db";
 import { pickWordsOfDay, wordOfDayBody } from "@/lib/wordOfDay";
+import {
+  appendPushLog,
+  describeEndpoint,
+  newBatchId,
+  type PushSource,
+} from "@/lib/pushLog";
 
 export { DEFAULT_REMIND_HOUR_KST } from "@/lib/pushRemind";
 
@@ -344,21 +350,47 @@ export async function userIdsWhoReviewedToday(
   return new Set((data ?? []).map((r) => r.user_id as string));
 }
 
+export type PushLogContext = {
+  batchId: string;
+  source: PushSource;
+  userId?: string | null;
+};
+
 export async function sendPushToSubscription(
-  sub: { endpoint: string; p256dh: string; auth: string },
-  payload: PushPayload
-): Promise<{ status: "ok" | "gone" | "error"; detail?: string }> {
+  sub: { endpoint: string; p256dh: string; auth: string; user_id?: string },
+  payload: PushPayload,
+  ctx?: PushLogContext
+): Promise<{ status: "ok" | "gone" | "error"; httpStatus?: number; detail?: string }> {
+  const log = async (
+    result: "ok" | "gone" | "error",
+    httpStatus: number | null,
+    removed: boolean,
+    error?: string
+  ) => {
+    if (!ctx) return;
+    await appendPushLog({
+      at: new Date().toISOString(),
+      batchId: ctx.batchId,
+      source: ctx.source,
+      userId: ctx.userId ?? sub.user_id ?? null,
+      ...describeEndpoint(sub.endpoint),
+      httpStatus,
+      result,
+      removed,
+      ...(error ? { error: error.slice(0, 200) } : {}),
+    });
+  };
+
   try {
     configureWebPush();
   } catch (e) {
-    return {
-      status: "error",
-      detail: e instanceof Error ? e.message : "VAPID 설정 오류",
-    };
+    const detail = e instanceof Error ? e.message : "VAPID 설정 오류";
+    await log("error", null, false, detail);
+    return { status: "error", detail };
   }
 
   try {
-    await getWebPush().sendNotification(
+    const res = await getWebPush().sendNotification(
       {
         endpoint: sub.endpoint,
         keys: { p256dh: sub.p256dh, auth: sub.auth },
@@ -366,20 +398,24 @@ export async function sendPushToSubscription(
       JSON.stringify(payload),
       { TTL: 60 * 60 }
     );
-    return { status: "ok" };
+    const code = (res as { statusCode?: number } | undefined)?.statusCode ?? 201;
+    await log("ok", code, false);
+    return { status: "ok", httpStatus: code };
   } catch (e: unknown) {
     const err = e as { statusCode?: number; body?: string; message?: string };
     const status = err?.statusCode;
     const detail = [status && `HTTP ${status}`, err?.body || err?.message]
       .filter(Boolean)
       .join(" ");
-    console.error("sendPush", detail, e);
+    console.error("sendPush", detail);
 
     if (status === 404 || status === 410) {
-      await removePushSubscription(sub.endpoint);
-      return { status: "gone", detail };
+      const removed = await removePushSubscription(sub.endpoint);
+      await log("gone", status, removed, detail);
+      return { status: "gone", httpStatus: status, detail };
     }
-    return { status: "error", detail: detail || "push failed" };
+    await log("error", status ?? null, false, detail || "push failed");
+    return { status: "error", httpStatus: status, detail: detail || "push failed" };
   }
 }
 
@@ -387,7 +423,8 @@ export async function sendPushToUser(
   userId: string,
   payload: PushPayload,
   extraSub?: PushSubscriptionJSON | null,
-  remindHourKst?: number
+  remindHourKst?: number,
+  source: PushSource = "self_test"
 ): Promise<{
   sent: number;
   failed: number;
@@ -426,8 +463,9 @@ export async function sendPushToUser(
     return { sent: 0, failed: 0, total: 0, details, dbError: dbError ?? undefined };
   }
 
+  const batchId = newBatchId(source);
   for (const sub of list) {
-    const r = await sendPushToSubscription(sub, payload);
+    const r = await sendPushToSubscription(sub, payload, { batchId, source, userId });
     if (r.status === "ok") sent += 1;
     else {
       failed += 1;
@@ -443,8 +481,9 @@ export async function sendPushToAll(
   const subs = await listAllSubscriptions();
   let sent = 0;
   let failed = 0;
+  const batchId = newBatchId("broadcast");
   for (const sub of subs) {
-    const r = await sendPushToSubscription(sub, payload);
+    const r = await sendPushToSubscription(sub, payload, { batchId, source: "broadcast" });
     if (r.status === "ok") sent += 1;
     else failed += 1;
   }
@@ -506,13 +545,15 @@ export async function sendDueReminders(payload?: Partial<PushPayload>): Promise<
     due.map((r) => r.user_id).filter((id): id is string => !!id)
   );
   let withWord = 0;
+  const batchId = newBatchId("scheduled");
 
   for (const sub of due) {
     const w = sub.user_id ? words.get(sub.user_id) : undefined;
     if (w) withWord += 1;
     const r = await sendPushToSubscription(
       sub,
-      w ? { ...full, body: wordOfDayBody(w) } : full
+      w ? { ...full, body: wordOfDayBody(w) } : full,
+      { batchId, source: "scheduled" }
     );
     if (r.status === "ok") {
       sent += 1;

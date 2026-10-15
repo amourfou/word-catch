@@ -89,7 +89,9 @@ export async function POST(req: Request) {
     const result = await sendPushToUser(
       me.id,
       { ...TEMPLATES.test, tag: "wordcatch-test" },
-      null
+      null,
+      undefined,
+      "self_test"
     );
 
     if (result.sent === 0) {

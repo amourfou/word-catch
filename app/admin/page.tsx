@@ -728,6 +728,7 @@ function PushPanel({
     }[]
   >([]);
   const [byHour, setByHour] = useState<{ hour: number; count: number }[]>([]);
+  const [logs, setLogs] = useState<PushSendLog[]>([]);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -735,6 +736,7 @@ function PushPanel({
       subscriptions: typeof subs;
       byHour: typeof byHour;
       total: number;
+      sendLogs?: PushSendLog[];
     }>("/api/admin/push", adminUserId);
     if (!res.ok) {
       onMessage(res.error);
@@ -742,6 +744,7 @@ function PushPanel({
     }
     setSubs(res.data.subscriptions);
     setByHour(res.data.byHour);
+    setLogs(res.data.sendLogs ?? []);
   }, [adminUserId, onMessage]);
 
   useEffect(() => {
@@ -750,16 +753,20 @@ function PushPanel({
 
   const testPush = async (userId: string, name: string) => {
     setBusy(true);
-    const res = await adminFetch("/api/admin/push", adminUserId, {
-      method: "POST",
-      json: { userId },
-    });
+    const res = await adminFetch<{ sent: number; failed: number; total: number }>(
+      "/api/admin/push",
+      adminUserId,
+      { method: "POST", json: { userId } }
+    );
     setBusy(false);
+    void load();
     if (!res.ok) {
-      onMessage(res.error);
+      onMessage(`${name}: ${res.error} (아래 발송 결과 확인)`);
       return;
     }
-    onMessage(`${name} 님에게 테스트 푸시를 보냈어요.`);
+    onMessage(
+      `${name} 님 테스트 푸시: 성공 ${res.data.sent}대 / 실패 ${res.data.failed}대 (총 ${res.data.total}대)`
+    );
   };
 
   const uniqueUsers = useMemo(() => {
@@ -810,7 +817,121 @@ function PushPanel({
           </li>
         ))}
       </ul>
+      <PushLogList logs={logs} />
     </section>
+  );
+}
+
+type PushSendLog = {
+  at: string;
+  batchId: string;
+  source: "scheduled" | "admin_test" | "self_test" | "broadcast";
+  userId: string | null;
+  userName: string;
+  endpointType: "fcm" | "apple" | "other";
+  endpointHost: string;
+  endpointTail: string;
+  httpStatus: number | null;
+  result: "ok" | "gone" | "error";
+  removed: boolean;
+  error?: string;
+};
+
+const SOURCE_LABEL: Record<PushSendLog["source"], string> = {
+  scheduled: "정기 알림",
+  admin_test: "관리자 테스트",
+  self_test: "본인 테스트",
+  broadcast: "전체 발송",
+};
+const TYPE_LABEL: Record<PushSendLog["endpointType"], string> = {
+  fcm: "FCM(안드로이드)",
+  apple: "Apple",
+  other: "기타",
+};
+
+function formatKstTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("ko-KR", {
+      timeZone: "Asia/Seoul",
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function PushLogList({ logs }: { logs: PushSendLog[] }) {
+  const groups = useMemo(() => {
+    const map = new Map<string, PushSendLog[]>();
+    for (const l of logs) {
+      const arr = map.get(l.batchId) ?? [];
+      arr.push(l);
+      map.set(l.batchId, arr);
+    }
+    return Array.from(map.entries()).slice(0, 30);
+  }, [logs]);
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold text-muted-foreground">
+        최근 발송 결과 (기기별)
+      </p>
+      {groups.length === 0 && (
+        <p className="text-xs text-muted-foreground">아직 기록이 없어요.</p>
+      )}
+      {groups.map(([batchId, items]) => {
+        const ok = items.filter((i) => i.result === "ok").length;
+        return (
+          <div
+            key={batchId}
+            className="rounded-2xl border border-border bg-card px-3 py-2 text-xs"
+          >
+            <p className="font-semibold">
+              {formatKstTime(items[items.length - 1].at)} ·{" "}
+              {SOURCE_LABEL[items[0].source] ?? items[0].source} · 성공 {ok}/
+              {items.length}
+            </p>
+            <ul className="mt-1 space-y-1">
+              {items.map((l, i) => (
+                <li key={`${batchId}-${i}`} className="flex flex-wrap gap-x-2">
+                  <span
+                    className={
+                      l.result === "ok"
+                        ? "text-green-600"
+                        : l.result === "gone"
+                          ? "text-amber-600"
+                          : "text-red-600"
+                    }
+                  >
+                    {l.result === "ok"
+                      ? "성공"
+                      : l.result === "gone"
+                        ? l.removed
+                          ? "만료→구독 삭제"
+                          : "만료(삭제 실패)"
+                        : "실패"}{" "}
+                    {l.httpStatus ?? "-"}
+                  </span>
+                  <span>{l.userName}</span>
+                  <span className="text-muted-foreground">
+                    {TYPE_LABEL[l.endpointType]} …{l.endpointTail}
+                  </span>
+                  {l.error && l.result !== "ok" && (
+                    <span className="w-full break-all text-muted-foreground">
+                      {l.error}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
