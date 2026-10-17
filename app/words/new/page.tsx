@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
@@ -166,7 +167,10 @@ export default function NewWordPage() {
           단어 추가
         </h1>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          스펠링·뜻을 직접 입력 (자동완성 없음)
+          스펠링·뜻을 직접 입력 (자동완성 없음) ·{" "}
+          <Link href="/words/photo" className="font-semibold text-primary underline">
+            사진으로 여러 개 추가
+          </Link>
         </p>
       </div>
 

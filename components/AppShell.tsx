@@ -31,12 +31,12 @@ const baseNav = [
 
 function isNavActive(pathname: string, href: string): boolean {
   if (href === "/words/new") {
-    return pathname === "/words/new";
+    return pathname === "/words/new" || pathname === "/words/photo";
   }
   if (href === "/words") {
     return (
       pathname === "/words" ||
-      (pathname.startsWith("/words/") && pathname !== "/words/new")
+      (pathname.startsWith("/words/") && pathname !== "/words/new" && pathname !== "/words/photo")
     );
   }
   return pathname === href || pathname.startsWith(`${href}/`);
