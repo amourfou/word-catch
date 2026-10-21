@@ -9,6 +9,12 @@ export async function register() {
     return;
   }
 
+  // Vercel(서버리스)에서는 PUSH_SCHEDULER_ENABLED가 있어도 스케줄러를 띄우지 않음
+  if (process.env.VERCEL) {
+    console.log("[push-scheduler] disabled on Vercel");
+    return;
+  }
+
   const flag = (process.env.PUSH_SCHEDULER_ENABLED || "").trim().toLowerCase();
   const enabled =
     flag === "1" || flag === "true" || flag === "yes" || flag === "on";
